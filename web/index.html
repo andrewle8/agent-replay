@@ -46,6 +46,13 @@
                     <!-- Video / Webcam area -->
                     <div class="video-container">
                         <canvas id="webcam-canvas" width="640" height="360"></canvas>
+                        <div id="code-overlay" class="code-overlay">
+                            <div class="code-overlay-header">
+                                <span id="code-overlay-type" class="code-overlay-type"></span>
+                                <span id="code-overlay-file" class="code-overlay-file"></span>
+                            </div>
+                            <pre id="code-overlay-body" class="code-overlay-body"></pre>
+                        </div>
                         <div class="video-overlay-top">
                             <span id="live-badge" class="live-badge">LIVE</span>
                             <span id="viewer-count" class="viewer-count">👁 0</span>

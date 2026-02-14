@@ -82,6 +82,11 @@ let state = {
     masterEvents: [],
     masterAgents: {},
     masterSessionCount: 0,
+    // Code overlay state
+    _lastEventFilePath: '',
+    codeOverlayTimer: null,
+    // Master monitor real content
+    masterMonitorContent: [],
 };
 
 // ============================================================
@@ -436,6 +441,88 @@ function getReactionDuration(type) {
         case 'user': return 40;
         default: return 30;
     }
+}
+
+// ============================================================
+// CODE OVERLAY
+// ============================================================
+
+function updateCodeOverlay(type, content, filePath) {
+    const overlay = document.getElementById('code-overlay');
+    if (!overlay) return;
+
+    // Skip short or empty content
+    if (!content || typeof content !== 'string' || content.length <= 20) return;
+
+    const typeEl = document.getElementById('code-overlay-type');
+    const fileEl = document.getElementById('code-overlay-file');
+    const bodyEl = document.getElementById('code-overlay-body');
+
+    // Header: type badge
+    const label = EVENT_LABELS[type] || type;
+    const icon = ICONS[type] || '';
+    typeEl.textContent = `${icon} ${label}`;
+    typeEl.className = 'code-overlay-type type-' + type;
+
+    // Header: filename
+    fileEl.textContent = filePath || '';
+
+    // Body: truncate to 100 lines
+    let lines = content.split('\n');
+    if (lines.length > 100) lines = lines.slice(0, 100);
+    bodyEl.textContent = lines.join('\n');
+    bodyEl.className = 'code-overlay-body content-' + type;
+
+    // Show with fade-in
+    overlay.classList.add('visible');
+
+    // Reset auto-hide timer
+    if (state.codeOverlayTimer) clearTimeout(state.codeOverlayTimer);
+    state.codeOverlayTimer = setTimeout(() => {
+        overlay.classList.remove('visible');
+        state.codeOverlayTimer = null;
+    }, 15000);
+}
+
+function hideCodeOverlay() {
+    const overlay = document.getElementById('code-overlay');
+    if (overlay) overlay.classList.remove('visible');
+    if (state.codeOverlayTimer) {
+        clearTimeout(state.codeOverlayTimer);
+        state.codeOverlayTimer = null;
+    }
+}
+
+// ============================================================
+// MCR REAL MONITOR CONTENT
+// ============================================================
+
+function updateMasterMonitors(events) {
+    const contentTypes = ['file_create', 'file_update', 'bash', 'tool_call', 'text', 'think', 'error'];
+    const byProject = {};
+
+    // Walk backwards to get latest content-bearing event per project
+    for (let i = events.length - 1; i >= 0; i--) {
+        const evt = events[i];
+        if (!evt.project || !contentTypes.includes(evt.type)) continue;
+        if (!evt.content || evt.content.length < 10) continue;
+        if (byProject[evt.project]) continue;
+        byProject[evt.project] = {
+            text: evt.content,
+            type: evt.type,
+            project: evt.project,
+            path: evt.short_path || evt.file_path || '',
+        };
+        if (Object.keys(byProject).length >= 6) break;
+    }
+
+    // Fill 6 slots
+    const slots = [];
+    for (const proj of Object.keys(byProject)) {
+        slots.push(byProject[proj]);
+    }
+    while (slots.length < 6) slots.push(null);
+    state.masterMonitorContent = slots;
 }
 
 // ============================================================
@@ -1574,10 +1661,12 @@ function navigate(hash) { window.location.hash = hash; }
 function handleRoute() {
     stopAllAnimations();
     stopViewerChat();
+    hideCodeOverlay();
     state.reaction = null;
     state.typingSpeed = 1.0;
     state.chatFullscreen = false;
     state.replyToEventIndex = null;
+    state.masterMonitorContent = [];
     const hash = window.location.hash || '#/';
     if (hash === '#/master') {
         showMasterChannel();
@@ -2433,10 +2522,12 @@ function connectSessionWS(filePath) {
             state.session.events.push(...msg.events);
             state.session.agents = msg.agents;
 
-            // Trigger webcam reaction for the newest event
+            // Trigger webcam reaction + code overlay for the newest event
             if (msg.events.length > 0) {
                 const lastEvt = msg.events[msg.events.length - 1];
+                const evtPath = lastEvt.short_path || lastEvt.file_path || '';
                 triggerReaction(lastEvt.type, lastEvt.content);
+                updateCodeOverlay(lastEvt.type, lastEvt.content, evtPath);
             }
 
             const log = document.getElementById('event-log');
@@ -2522,6 +2613,7 @@ async function showMasterChannel() {
         initFilters();
         renderMasterSession();
         setupScrollListener();
+        updateMasterMonitors(data.events);
         connectMasterWS();
 
         const canvas = document.getElementById('webcam-canvas');
@@ -2581,9 +2673,12 @@ function connectMasterWS() {
                 state.session.events = state.session.events.slice(-2000);
             }
 
-            // Trigger reaction from newest event
+            // Trigger reaction + code overlay from newest event
             const lastEvt = msg.events[msg.events.length - 1];
+            const evtPath = lastEvt.short_path || lastEvt.file_path || '';
             triggerReaction(lastEvt.type, lastEvt.content);
+            updateCodeOverlay(lastEvt.type, lastEvt.content, evtPath);
+            updateMasterMonitors(state.session.events);
 
             const log = document.getElementById('event-log');
             const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
@@ -2629,6 +2724,43 @@ function startControlRoomAnimation(canvas) {
     state.animFrames.set(id, requestAnimationFrame(animate));
 }
 
+function drawRealCode(ctx, mx, my, mw, mh, content, frame) {
+    // Draw real code text inside a monitor rectangle
+    const typeColors = {
+        bash: '#ffd700', error: '#ff6666', think: '#ffcc00',
+        file_create: '#66ff88', file_update: '#a5d6a7',
+        tool_call: '#81d4fa', text: '#c5c8c6', spawn: '#e879a8',
+    };
+    const textColor = typeColors[content.type] || '#c5c8c6';
+
+    // Render text lines using small font
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(mx, my, mw, mh);
+    ctx.clip();
+
+    ctx.font = '7px monospace';
+    ctx.fillStyle = textColor;
+
+    const lines = content.text.split('\n');
+    const lineH = 8;
+    const maxLines = Math.floor((mh - 6) / lineH);
+    const charsPerLine = Math.floor((mw - 8) / 4.2);
+
+    // Slow scroll effect
+    const scrollOffset = Math.floor(frame * 0.05) % Math.max(1, lines.length);
+
+    for (let r = 0; r < maxLines; r++) {
+        const lineIdx = (scrollOffset + r) % lines.length;
+        const ly = my + 6 + r * lineH;
+        let line = lines[lineIdx] || '';
+        if (line.length > charsPerLine) line = line.slice(0, charsPerLine);
+        ctx.fillText(line, mx + 4, ly + 6);
+    }
+
+    ctx.restore();
+}
+
 function drawControlRoom(canvas, frame) {
     const ctx = canvas.getContext('2d');
     const w = canvas.width;
@@ -2670,64 +2802,68 @@ function drawControlRoom(canvas, frame) {
                 ctx.fillRect(mx, y, mw, 1);
             }
 
-            // Each monitor gets a different content mode
-            const monMode = (idx + Math.floor(frame / 600)) % 4;
-            const scroll = (frame * (0.3 + idx * 0.1)) % 20;
-            const cc = codeColors[idx % codeColors.length];
+            // Check for real content from active projects
+            const realContent = state.masterMonitorContent[idx];
 
-            if (monMode === 1) {
-                // Terminal-style
-                for (let r = 0; r < 5; r++) {
-                    const ly = my + 4 + r * 6;
-                    if (ly >= my + mh - 4) continue;
-                    ctx.fillStyle = '#aaaaaa';
-                    ctx.fillRect(mx + 4, ly, px, px - 2);
-                    ctx.fillStyle = cc[0];
-                    const lineLen = Math.floor(mw / px) - 6;
-                    for (let c = 0; c < lineLen; c++) {
-                        if (((idx * 7 + r + c) * 31) % 100 < 25) continue;
-                        ctx.fillRect(mx + 8 + c * (px - 1), ly, px - 2, px - 2);
-                    }
-                }
-            } else if (monMode === 2) {
-                // File tree
-                for (let r = 0; r < 5; r++) {
-                    const ly = my + 4 + r * 6;
-                    if (ly >= my + mh - 4) continue;
-                    const indent = (r * idx) % 3;
-                    ctx.fillStyle = r % 2 === 0 ? '#f0c674' : '#c5c8c6';
-                    ctx.fillRect(mx + 4 + indent * px, ly, px - 1, px - 2);
-                    const nameLen = 3 + (r * idx + 5) % 6;
-                    for (let c = 0; c < nameLen; c++) {
-                        ctx.fillRect(mx + 4 + indent * px + (c + 2) * (px - 1), ly, px - 2, px - 2);
-                    }
-                }
-            } else if (monMode === 3) {
-                // Debug logs — mixed colors
-                const logC = ['#00ff41', '#ffcc00', '#ff4444'];
-                for (let r = 0; r < 5; r++) {
-                    const ly = my + 4 + r * 6;
-                    if (ly >= my + mh - 4) continue;
-                    ctx.fillStyle = logC[r % logC.length];
-                    const lineLen = Math.floor(mw / px) - 4;
-                    for (let c = 0; c < lineLen; c++) {
-                        if (((idx * 11 + r + c * 13 + Math.floor(scroll)) * 29) % 100 < 25) continue;
-                        ctx.fillRect(mx + 4 + c * (px - 1), ly, px - 2, px - 2);
-                    }
-                }
+            if (realContent) {
+                // Draw real code text on this monitor
+                drawRealCode(ctx, mx, my, mw, mh, realContent, frame);
             } else {
-                // Code (default)
-                for (let r = 0; r < 5; r++) {
-                    const ly = my + 4 + r * 6;
-                    if (ly >= my + mh - 4) continue;
-                    const lineSeed = (idx * 7 + r + Math.floor(scroll)) * 31;
-                    const lineLen = Math.floor(mw / px) - 4;
-                    ctx.fillStyle = cc[r % cc.length];
-                    for (let c = 0; c < lineLen; c++) {
-                        if ((lineSeed + c * 13) % 100 < 25) continue;
-                        const cx2 = mx + 4 + c * (px - 1);
-                        if (cx2 + px > mx + mw - 4) break;
-                        ctx.fillRect(cx2, ly, px - 2, px - 2);
+                // Procedural content (original)
+                const monMode = (idx + Math.floor(frame / 600)) % 4;
+                const scroll = (frame * (0.3 + idx * 0.1)) % 20;
+                const cc = codeColors[idx % codeColors.length];
+
+                if (monMode === 1) {
+                    for (let r = 0; r < 5; r++) {
+                        const ly = my + 4 + r * 6;
+                        if (ly >= my + mh - 4) continue;
+                        ctx.fillStyle = '#aaaaaa';
+                        ctx.fillRect(mx + 4, ly, px, px - 2);
+                        ctx.fillStyle = cc[0];
+                        const lineLen = Math.floor(mw / px) - 6;
+                        for (let c = 0; c < lineLen; c++) {
+                            if (((idx * 7 + r + c) * 31) % 100 < 25) continue;
+                            ctx.fillRect(mx + 8 + c * (px - 1), ly, px - 2, px - 2);
+                        }
+                    }
+                } else if (monMode === 2) {
+                    for (let r = 0; r < 5; r++) {
+                        const ly = my + 4 + r * 6;
+                        if (ly >= my + mh - 4) continue;
+                        const indent = (r * idx) % 3;
+                        ctx.fillStyle = r % 2 === 0 ? '#f0c674' : '#c5c8c6';
+                        ctx.fillRect(mx + 4 + indent * px, ly, px - 1, px - 2);
+                        const nameLen = 3 + (r * idx + 5) % 6;
+                        for (let c = 0; c < nameLen; c++) {
+                            ctx.fillRect(mx + 4 + indent * px + (c + 2) * (px - 1), ly, px - 2, px - 2);
+                        }
+                    }
+                } else if (monMode === 3) {
+                    const logC = ['#00ff41', '#ffcc00', '#ff4444'];
+                    for (let r = 0; r < 5; r++) {
+                        const ly = my + 4 + r * 6;
+                        if (ly >= my + mh - 4) continue;
+                        ctx.fillStyle = logC[r % logC.length];
+                        const lineLen = Math.floor(mw / px) - 4;
+                        for (let c = 0; c < lineLen; c++) {
+                            if (((idx * 11 + r + c * 13 + Math.floor(scroll)) * 29) % 100 < 25) continue;
+                            ctx.fillRect(mx + 4 + c * (px - 1), ly, px - 2, px - 2);
+                        }
+                    }
+                } else {
+                    for (let r = 0; r < 5; r++) {
+                        const ly = my + 4 + r * 6;
+                        if (ly >= my + mh - 4) continue;
+                        const lineSeed = (idx * 7 + r + Math.floor(scroll)) * 31;
+                        const lineLen = Math.floor(mw / px) - 4;
+                        ctx.fillStyle = cc[r % cc.length];
+                        for (let c = 0; c < lineLen; c++) {
+                            if ((lineSeed + c * 13) % 100 < 25) continue;
+                            const cx2 = mx + 4 + c * (px - 1);
+                            if (cx2 + px > mx + mw - 4) break;
+                            ctx.fillRect(cx2, ly, px - 2, px - 2);
+                        }
                     }
                 }
             }
@@ -2743,6 +2879,17 @@ function drawControlRoom(canvas, frame) {
             const ledState = (frame + idx * 37) % 200 < 180;
             ctx.fillStyle = ledState ? ledColors[idx] : '#333333';
             ctx.fillRect(mx + mw + 4, my + mh / 2, px, px);
+
+            // Project label below monitor
+            if (realContent && realContent.project) {
+                ctx.font = '8px monospace';
+                ctx.fillStyle = '#888899';
+                ctx.textAlign = 'center';
+                let label = realContent.project;
+                if (label.length > 12) label = label.slice(0, 11) + '\u2026';
+                ctx.fillText(label, mx + mw / 2, my + mh + 12);
+                ctx.textAlign = 'start';
+            }
         }
     }
 
