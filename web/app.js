@@ -515,15 +515,17 @@ function updateMasterMonitors(events) {
             project: evt.project,
             path: evt.short_path || evt.file_path || '',
         };
-        if (Object.keys(byProject).length >= 6) break;
+        if (Object.keys(byProject).length >= 12) break;
     }
 
-    // Fill 6 slots
+    // Fill slots to match dynamic grid size
     const slots = [];
     for (const proj of Object.keys(byProject)) {
         slots.push(byProject[proj]);
     }
-    while (slots.length < 6) slots.push(null);
+    const n = slots.length;
+    const gridSize = n <= 2 ? 2 : n <= 4 ? 4 : n <= 6 ? 6 : n <= 9 ? 9 : 12;
+    while (slots.length < gridSize) slots.push(null);
     state.masterMonitorContent = slots;
 }
 
@@ -2900,22 +2902,88 @@ function drawControlRoom(canvas, frame) {
 
     // Floor
     ctx.fillStyle = '#12121e';
-    ctx.fillRect(0, h * 0.75, w, h * 0.25);
+    ctx.fillRect(0, h * 0.78, w, h * 0.22);
 
-    // Wall of monitors (3x2 grid)
-    const monColors = ['#003322', '#001a33', '#1a0033', '#0a1628', '#1a0a00', '#001a00'];
+    // Dynamic monitor grid
+    const totalSlots = state.masterMonitorContent.length || 6;
+    const cols = totalSlots <= 2 ? 2 : totalSlots <= 4 ? 2 : totalSlots <= 6 ? 3 : totalSlots <= 9 ? 3 : 4;
+    const rows = Math.ceil(totalSlots / cols);
+
+    const monColors = [
+        '#003322', '#001a33', '#1a0033', '#0a1628', '#1a0a00', '#001a00',
+        '#002233', '#220033', '#0a2800', '#1a1100', '#001a22', '#110022',
+    ];
     const codeColors = [
         ['#00ff41', '#00cc33'], ['#ff6666', '#ff4444'], ['#6699ff', '#4488ff'],
         ['#ffcc00', '#ff9900'], ['#ff66ff', '#ff44ff'], ['#66ffcc', '#44ffaa'],
+        ['#ff9966', '#ff7744'], ['#99ff66', '#77ff44'], ['#66ccff', '#44aaff'],
+        ['#ff6699', '#ff4477'], ['#ccff66', '#aaff44'], ['#9966ff', '#7744ff'],
+    ];
+    const ledColors = [
+        '#00ff00', '#ff0000', '#ffcc00', '#00ff00', '#00ff00', '#ffcc00',
+        '#00ffcc', '#ff6600', '#66ff00', '#ff0066', '#00ff66', '#cc00ff',
     ];
 
-    for (let row = 0; row < 2; row++) {
-        for (let col = 0; col < 3; col++) {
-            const mx = w * 0.08 + col * (w * 0.28);
-            const my = h * 0.05 + row * (h * 0.33);
-            const mw = w * 0.24;
-            const mh = h * 0.28;
-            const idx = row * 3 + col;
+    // Monitor wall region
+    const wallLeft = w * 0.06;
+    const wallRight = w * 0.94;
+    const wallTop = h * 0.03;
+    const wallBottom = Math.min(h * (0.28 + rows * 0.14), h * 0.72);
+
+    const gap = 4;
+    const availW = wallRight - wallLeft;
+    const availH = wallBottom - wallTop;
+    const mw = (availW - gap * (cols + 1)) / cols;
+    const mh = (availH - gap * (rows + 1)) / rows;
+    const scanlineSpacing = Math.max(2, Math.floor(mh / 20));
+    const labelFont = cols >= 3 ? '7px monospace' : '8px monospace';
+    const maxLabelLen = cols >= 3 ? 10 : 12;
+
+    // Wall clock (upper left corner)
+    const clockX = w * 0.02;
+    const clockY = h * 0.02;
+    const clockR = Math.min(w, h) * 0.04;
+    ctx.fillStyle = '#1a1a2e';
+    ctx.beginPath();
+    ctx.arc(clockX + clockR, clockY + clockR, clockR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#252540';
+    ctx.beginPath();
+    ctx.arc(clockX + clockR, clockY + clockR, clockR - 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Clock hands
+    const seconds = (frame * 0.5) % 60;
+    const minutes = (frame * 0.008) % 60;
+    // Minute hand
+    const minAngle = (minutes / 60) * Math.PI * 2 - Math.PI / 2;
+    ctx.strokeStyle = '#8888aa';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(clockX + clockR, clockY + clockR);
+    ctx.lineTo(clockX + clockR + Math.cos(minAngle) * (clockR * 0.6), clockY + clockR + Math.sin(minAngle) * (clockR * 0.6));
+    ctx.stroke();
+    // Second hand
+    const secAngle = (seconds / 60) * Math.PI * 2 - Math.PI / 2;
+    ctx.strokeStyle = '#ff4444';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(clockX + clockR, clockY + clockR);
+    ctx.lineTo(clockX + clockR + Math.cos(secAngle) * (clockR * 0.75), clockY + clockR + Math.sin(secAngle) * (clockR * 0.75));
+    ctx.stroke();
+    // Center dot
+    ctx.fillStyle = '#aaaacc';
+    ctx.beginPath();
+    ctx.arc(clockX + clockR, clockY + clockR, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw monitors
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            const idx = row * cols + col;
+            if (idx >= totalSlots) break;
+
+            const mx = wallLeft + gap + col * (mw + gap);
+            const my = wallTop + gap + row * (mh + gap);
 
             // Bezel
             ctx.fillStyle = '#2c2c34';
@@ -2925,7 +2993,7 @@ function drawControlRoom(canvas, frame) {
             ctx.fillRect(mx, my, mw, mh);
             // Scanlines
             ctx.fillStyle = 'rgba(0,0,0,0.1)';
-            for (let y = my; y < my + mh; y += 4) {
+            for (let y = my; y < my + mh; y += scanlineSpacing) {
                 ctx.fillRect(mx, y, mw, 1);
             }
 
@@ -3002,21 +3070,72 @@ function drawControlRoom(canvas, frame) {
             }
 
             // Status LED dots by each monitor
-            const ledColors = ['#00ff00', '#ff0000', '#ffcc00', '#00ff00', '#00ff00', '#ffcc00'];
             const ledState = (frame + idx * 37) % 200 < 180;
-            ctx.fillStyle = ledState ? ledColors[idx] : '#333333';
+            ctx.fillStyle = ledState ? ledColors[idx % ledColors.length] : '#333333';
             ctx.fillRect(mx + mw + 4, my + mh / 2, px, px);
 
             // Project label below monitor
             if (realContent && realContent.project) {
-                ctx.font = '8px monospace';
+                ctx.font = labelFont;
                 ctx.fillStyle = '#888899';
                 ctx.textAlign = 'center';
                 let label = realContent.project;
-                if (label.length > 12) label = label.slice(0, 11) + '\u2026';
+                if (label.length > maxLabelLen) label = label.slice(0, maxLabelLen - 1) + '\u2026';
                 ctx.fillText(label, mx + mw / 2, my + mh + 12);
                 ctx.textAlign = 'start';
             }
+        }
+    }
+
+    // Console desk
+    const deskY = wallBottom + 8;
+    const deskH = px * 4;
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(w * 0.05, deskY, w * 0.9, deskH);
+    ctx.fillStyle = '#252540';
+    ctx.fillRect(w * 0.06, deskY, w * 0.88, deskH - 2);
+    // Desk edge highlight
+    ctx.fillStyle = '#3a3a5a';
+    ctx.fillRect(w * 0.06, deskY, w * 0.88, 1);
+
+    // Server rack (right side)
+    const rackX = w * 0.92;
+    const rackY = h * 0.15;
+    const rackW = w * 0.06;
+    const rackH = h * 0.55;
+    ctx.fillStyle = '#0d0d1a';
+    ctx.fillRect(rackX, rackY, rackW, rackH);
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(rackX + 2, rackY + 2, rackW - 4, rackH - 4);
+    // Rack units (horizontal lines)
+    for (let u = 0; u < 8; u++) {
+        const uy = rackY + 4 + u * (rackH / 8);
+        ctx.fillStyle = '#252540';
+        ctx.fillRect(rackX + 4, uy, rackW - 8, rackH / 8 - 3);
+        // Blinking LEDs on each unit
+        const ledOn = (frame + u * 17) % 60 < 40;
+        ctx.fillStyle = ledOn ? '#00ff41' : '#0a2a0a';
+        ctx.fillRect(rackX + 6, uy + 3, 3, 3);
+        const led2On = (frame + u * 23 + 10) % 90 < 50;
+        ctx.fillStyle = led2On ? '#ff6600' : '#2a1a0a';
+        ctx.fillRect(rackX + 11, uy + 3, 3, 3);
+    }
+
+    // Keyboard on desk
+    const kbX = w * 0.38;
+    const kbY = deskY + 1;
+    const kbW = w * 0.24;
+    const kbH = deskH - 2;
+    ctx.fillStyle = '#2a2a3a';
+    ctx.fillRect(kbX, kbY, kbW, kbH);
+    // Key rows
+    for (let kr = 0; kr < 3; kr++) {
+        for (let kc = 0; kc < 12; kc++) {
+            const kx = kbX + 2 + kc * (kbW / 12);
+            const ky = kbY + 1 + kr * (kbH / 3);
+            const isPressed = (frame % 8 < 2) && (kc === (Math.floor(frame / 8) + kr) % 12);
+            ctx.fillStyle = isPressed ? '#5a5a7a' : '#3a3a4a';
+            ctx.fillRect(kx, ky, kbW / 12 - 1, kbH / 3 - 1);
         }
     }
 
@@ -3031,9 +3150,9 @@ function drawControlRoom(canvas, frame) {
         ctx.fillRect(w * 0.3, 0, w * 0.4, px * 4);
     }
 
-    // Manager monkey — centered, sitting in chair
+    // Manager monkey — centered, sitting in chair below desk
     const charX = w * 0.44;
-    const charY = h * 0.75 - px;
+    const charY = deskY + deskH + px * 14;
     const mFur = '#6B4226';
     const mFace = '#C4956A';
 
@@ -3088,17 +3207,18 @@ function drawControlRoom(canvas, frame) {
     ctx.fillRect(mhx + px * 1.2, mhy + px * 3.3, px * 0.4, px * 0.3);
     ctx.fillRect(mhx + px * 2.2, mhy + px * 3.3, px * 0.4, px * 0.3);
 
-    // Banana on desk (manager perk)
-    const banX = w * 0.78;
+    // Banana on desk surface (manager perk)
+    const banX = w * 0.70;
+    const banY = deskY - px;
     ctx.fillStyle = '#FFD700';
-    ctx.fillRect(banX, charY + px, px * 3, px);
-    ctx.fillRect(banX + px * 0.5, charY, px * 2, px);
+    ctx.fillRect(banX, banY + px, px * 3, px);
+    ctx.fillRect(banX + px * 0.5, banY, px * 2, px);
     ctx.fillStyle = '#8B6914';
-    ctx.fillRect(banX + px * 2.5, charY - px * 0.5, px * 0.5, px * 0.5);
+    ctx.fillRect(banX + px * 2.5, banY - px * 0.5, px * 0.5, px * 0.5);
 
-    // Manager coffee mug with steam
-    const mugX = w * 0.15;
-    const mugY = h * 0.72;
+    // Manager coffee mug with steam (on desk surface)
+    const mugX = w * 0.25;
+    const mugY = deskY;
     ctx.fillStyle = '#e0e0e0';
     ctx.fillRect(mugX, mugY - px * 3, px * 2, px * 2);
     ctx.fillStyle = '#8b4513';
