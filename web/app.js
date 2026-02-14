@@ -2084,6 +2084,10 @@ const VIEWER_NAMES = [
     'git_pusher', 'regex_queen', 'null_ptr', 'sudo_user', 'mr_merge',
     'debug_diva', 'pr_approved', 'stack_overflow', 'tab_hoarder', 'vim_exit',
     'semicolon_sam', 'async_anna', 'monorepo_mike', 'lint_error', 'deploy_dan',
+    'chmod_777', 'docker_dave', 'type_safe_ty', 'cargo_build', 'pip_install',
+    'branch_bob', 'merge_mia', 'refactor_ray', 'test_tina', 'ci_cd_carl',
+    'heap_holly', 'mutex_max', 'lambda_liz', 'cache_miss', 'jwt_jenny',
+    'yaml_yuri', 'env_var_ed', 'cors_cathy', 'orm_oscar', 'api_key_aki',
 ];
 
 // Event-type-specific fallback messages for viewer chat
@@ -2173,6 +2177,30 @@ const VIEWER_MESSAGES_GENERIC = [
     'solid project structure', 'how long has this been going',
     'first time catching the stream', 'this is better than Netflix',
     'learn so much from these streams', 'real ones are watching',
+    'the architecture here is interesting', 'what IDE is this',
+    'do you use copilot too?', 'this is my favorite stream',
+    'watching from work dont tell my boss', 'the vibes are immaculate',
+    'how did you learn all this?', 'is this open source?',
+    'anyone else taking notes?', 'my brain is expanding',
+    'this should be a tutorial', 'the code speaks for itself',
+    'how many monitors do you have?', 'clean code clean mind',
+    'respect the craft', 'you make it look easy',
+    'meanwhile my code doesnt even compile', 'teach me your ways',
+    'the productivity is insane', 'ok im inspired to code now',
+    'i need to refactor my whole project after this', 'subscribed',
+    'dropping knowledge bombs', 'this is peak engineering',
+    'anyone else staying up late for this?', 'just got here whats happening',
+    'the pacing is perfect', 'cant look away', 'coding ASMR fr',
+    'better than any bootcamp', 'my PR would never look this clean',
+    'wait go back i missed that', 'are there replays of this?',
+    'the focus is unreal', 'no stack overflow needed apparently',
+    'built different', 'i aspire to this level', 'chat is learning today',
+    'someone clip that', 'how long have you been coding?',
+    'the error messages fear this person', 'flawless execution',
+    'typing speed is wild', 'smooth operator', 'EZ',
+    'this is art', 'poetry in motion', 'brain.exe running at 100%',
+    'wish my team coded like this', 'taking mental notes rn',
+    'this stream is underrated', 'more people need to see this',
 ];
 
 // Generate a context-aware fallback message using recent event data
@@ -2192,6 +2220,12 @@ function _dynamicFallback(evt) {
             `that ${fname} edit tho`,
             `wonder how big ${fname} is now`,
             `${fname} diff is gonna be interesting`,
+            `${fname} is getting a glow up`,
+            `been watching ${fname} change all stream`,
+            `how many lines is ${fname} now`,
+            `${fname} again? must be important`,
+            `the ${fname} saga continues`,
+            `${fname} carrying the whole project`,
         );
     }
     if (proj) {
@@ -2200,12 +2234,18 @@ function _dynamicFallback(evt) {
             `${proj} getting some love`,
             `whats the status on ${proj}`,
             `${proj} making progress`,
+            `${proj} arc is heating up`,
+            `love the work on ${proj}`,
+            `${proj} looking clean today`,
+            `${proj} speedrun any%`,
         );
     }
     if (tool) {
         templates.push(
             `${tool} is the right call here`,
             `using ${tool} smart`,
+            `${tool} doing the heavy lifting`,
+            `good ol ${tool}`,
         );
     }
     if (templates.length > 0) {
@@ -2382,10 +2422,17 @@ function addViewerChatMessage() {
             }
             msg = pool[Math.floor(Math.random() * pool.length)];
         }
-        // Dedup — reroll once if we just said this
+        // Dedup — reroll up to 5 times across all pools to avoid recent messages
         if (_recentFallbacks.includes(msg)) {
-            const pool = VIEWER_MESSAGES_GENERIC;
-            msg = pool[Math.floor(Math.random() * pool.length)];
+            const allPools = [...VIEWER_MESSAGES_GENERIC];
+            if (recent) {
+                const typed = VIEWER_MESSAGES_BY_TYPE[recent.type];
+                if (typed) allPools.push(...typed);
+            }
+            for (let attempt = 0; attempt < 5; attempt++) {
+                const candidate = allPools[Math.floor(Math.random() * allPools.length)];
+                if (!_recentFallbacks.includes(candidate)) { msg = candidate; break; }
+            }
         }
         _recentFallbacks.push(msg);
         if (_recentFallbacks.length > _MAX_RECENT) _recentFallbacks.shift();
