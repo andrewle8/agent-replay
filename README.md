@@ -1,20 +1,8 @@
 # agent-replay
 
-Twitch-style live visualizer for Claude Code sessions. Watch AI agents code in real-time with pixel art webcams, animated chat, and streaming overlays.
+Twitch-style live visualizer for Claude Code sessions. Watch AI code monkeys work in real-time with pixel art webcams, animated chat, and streaming overlays.
 
-```
- +------------------------------------------+------------------+
- |  [PIXEL ART WEBCAM]                      |  STREAM CHAT     |
- |  Character typing at desk with           |  bot: spawns     |
- |  monitor showing actual code,            |  bot: $ npm test |
- |  blinking eyes, coffee steam,            |  viewer_42: LFG  |
- |  idle animations...                      |  bot: edits app  |
- |                                          |  pixel_dev: nice |
- +------------------------------------------+  code_fan: W     |
- |  Donation Goal [=========>    ] 45k tok  |                  |
- |  Like  Tip  Follow           3 viewers   +------------------+
- +------------------------------------------+------------------+
-```
+![agent-replay demo](demo.gif)
 
 ## Install
 
