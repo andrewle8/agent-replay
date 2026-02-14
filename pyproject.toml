@@ -4,14 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-replay"
-version = "0.1.0"
-description = "CLI Agent Visualizer — replay Claude Code sessions as animated TUI scenes"
+version = "0.2.0"
+description = "Web-based agent session visualizer for Claude Code"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
-    "rich>=13.0",
+    "fastapi>=0.104",
+    "uvicorn[standard]>=0.24",
 ]
 
 [project.scripts]
-agent-replay = "agent_replay.tui:main"
+agent-replay = "agent_replay.server:main"

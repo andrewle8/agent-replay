@@ -172,7 +172,7 @@ def _process_lines(lines: list[dict], agent_id: str, session: Session) -> None:
                         timestamp=timestamp,
                         type=EventType.USER,
                         agent_id=agent_id,
-                        content=_truncate(content, 200),
+                        content=content,
                     )
                 )
 
@@ -196,7 +196,7 @@ def _process_lines(lines: list[dict], agent_id: str, session: Session) -> None:
                                 timestamp=timestamp,
                                 type=EventType.ERROR if is_error else EventType.TOOL_RESULT,
                                 agent_id=agent_id,
-                                content=_truncate(str(result_text), 200),
+                                content=str(result_text),
                             )
                         )
 
@@ -243,7 +243,7 @@ def _process_lines(lines: list[dict], agent_id: str, session: Session) -> None:
                                 timestamp=timestamp,
                                 type=EventType.THINK,
                                 agent_id=agent_id,
-                                content=_truncate(thinking_text, 200),
+                                content=thinking_text,
                                 input_tokens=et_in,
                                 output_tokens=et_out,
                                 cache_read_tokens=et_cache,
@@ -258,7 +258,7 @@ def _process_lines(lines: list[dict], agent_id: str, session: Session) -> None:
                                 timestamp=timestamp,
                                 type=EventType.TEXT,
                                 agent_id=agent_id,
-                                content=_truncate(text, 200),
+                                content=text,
                             )
                         )
 
@@ -284,7 +284,7 @@ def _process_lines(lines: list[dict], agent_id: str, session: Session) -> None:
                     elif tool_name == "WebFetch":
                         description = tool_input.get("url", "")
                     else:
-                        description = str(tool_input)[:100]
+                        description = str(tool_input)
 
                     content = description or file_path
                     et_in, et_out, et_cache = _event_tokens()
@@ -296,17 +296,9 @@ def _process_lines(lines: list[dict], agent_id: str, session: Session) -> None:
                             agent_id=agent_id,
                             tool_name=tool_name,
                             file_path=file_path,
-                            content=_truncate(content, 200),
+                            content=content,
                             input_tokens=et_in,
                             output_tokens=et_out,
                             cache_read_tokens=et_cache,
                         )
                     )
-
-
-def _truncate(text: str, max_len: int) -> str:
-    """Truncate text, collapsing whitespace."""
-    text = " ".join(text.split())
-    if len(text) > max_len:
-        return text[: max_len - 3] + "..."
-    return text

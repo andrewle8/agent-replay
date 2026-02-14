@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>agent-replay</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Dashboard View -->
+        <div id="dashboard-view" class="view">
+            <header class="top-bar">
+                <span class="logo">agent-replay</span>
+                <span class="subtitle">session dashboard</span>
+                <span id="dash-status" class="conn-status"></span>
+            </header>
+            <div id="session-grid" class="session-grid"></div>
+            <div id="no-sessions" class="empty-state" style="display:none">
+                No sessions found in ~/.claude/projects/
+            </div>
+        </div>
+
+        <!-- Session Detail View -->
+        <div id="session-view" class="view" style="display:none">
+            <header class="top-bar">
+                <button id="back-btn" class="back-btn" title="Back to dashboard">◂ back</button>
+                <span id="session-slug" class="logo"></span>
+                <span id="session-meta" class="subtitle"></span>
+                <span id="session-tokens" class="token-info"></span>
+                <span id="session-status" class="conn-status"></span>
+            </header>
+            <div class="session-layout">
+                <div class="event-log-container">
+                    <div class="panel-header">
+                        EVENT LOG
+                        <span id="event-count" class="dim"></span>
+                        <span id="new-events-badge" class="new-badge" style="display:none"></span>
+                    </div>
+                    <div id="event-log" class="event-log"></div>
+                </div>
+                <div class="sidebar">
+                    <div class="sidebar-panel">
+                        <div class="panel-header">AGENTS</div>
+                        <div id="agents-panel"></div>
+                    </div>
+                    <div class="sidebar-panel">
+                        <div class="panel-header">INVENTORY</div>
+                        <div id="inventory-panel"></div>
+                    </div>
+                    <div class="sidebar-panel">
+                        <div class="panel-header">FILTERS</div>
+                        <div id="filters-panel"></div>
+                    </div>
+                </div>
+            </div>
+            <footer class="status-bar">
+                <span id="live-indicator"></span>
+                <span id="status-text"></span>
+            </footer>
+        </div>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>

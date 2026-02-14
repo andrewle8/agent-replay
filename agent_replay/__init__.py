@@ -1,3 +1,3 @@
-"""agent-replay: CLI Agent Visualizer — replay Claude Code sessions as animated TUI scenes."""
+"""agent-replay: Web-based agent session visualizer for Claude Code."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
