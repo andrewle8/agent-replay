@@ -97,8 +97,16 @@
                         <span id="new-events-badge" class="new-badge" style="display:none"></span>
                         <button id="expand-chat-btn" class="expand-chat-btn" title="Toggle fullscreen chat">⛶</button>
                     </div>
-                    <div class="chat-log-wrapper">
-                        <div id="event-log" class="chat-log"></div>
+                    <div class="chat-dual-pane">
+                        <div class="chat-pane viewer-pane">
+                            <div class="chat-pane-header">VIEWER CHAT <span id="viewer-chat-count"></span></div>
+                            <div class="chat-pane-body" id="viewer-log"></div>
+                        </div>
+                        <div class="chat-pane-divider"></div>
+                        <div class="chat-pane agent-pane">
+                            <div class="chat-pane-header">AGENT LOG <span id="agent-log-count"></span></div>
+                            <div class="chat-pane-body" id="event-log"></div>
+                        </div>
                         <button id="scroll-bottom-btn" class="scroll-bottom-btn" style="display:none" title="Scroll to bottom">↓ New messages</button>
                     </div>
                     <div id="chat-reply-preview" class="chat-reply-preview" style="display:none">
@@ -163,6 +171,44 @@
                         <input id="s-openai-key" class="settings-input" type="password" placeholder="sk-…">
                         <label class="settings-label">OpenAI Model</label>
                         <input id="s-openai-model" class="settings-input" type="text" placeholder="gpt-4o-mini">
+                    </div>
+
+                    <div class="settings-divider"></div>
+                    <div class="settings-section-toggle" id="tuning-toggle">▸ Tuning</div>
+                    <div id="tuning-fields" style="display:none">
+                        <label class="settings-label">Chat Speed</label>
+                        <select id="s-chat-speed" class="settings-input">
+                            <option value="slow">Slow (5-15s)</option>
+                            <option value="normal" selected>Normal (3-10s)</option>
+                            <option value="fast">Fast (1-3s)</option>
+                        </select>
+
+                        <label class="settings-label">Narrator Frequency (seconds)</label>
+                        <div class="settings-range-row">
+                            <input id="s-narrator-freq" class="settings-range" type="range" min="5" max="120" value="20">
+                            <span id="s-narrator-freq-val" class="settings-range-val">20s</span>
+                        </div>
+
+                        <label class="settings-label">Tip Chance (%)</label>
+                        <div class="settings-range-row">
+                            <input id="s-tip-chance" class="settings-range" type="range" min="0" max="50" value="15">
+                            <span id="s-tip-chance-val" class="settings-range-val">15%</span>
+                        </div>
+
+                        <label class="settings-label">Reaction Chance (%)</label>
+                        <div class="settings-range-row">
+                            <input id="s-reaction-chance" class="settings-range" type="range" min="0" max="100" value="50">
+                            <span id="s-reaction-chance-val" class="settings-range-val">50%</span>
+                        </div>
+
+                        <label class="settings-label">Chat Buffer Size</label>
+                        <input id="s-buffer-size" class="settings-input" type="number" min="3" max="25" value="10">
+
+                        <label class="settings-label">Code Overlay Duration (seconds)</label>
+                        <div class="settings-range-row">
+                            <input id="s-overlay-duration" class="settings-range" type="range" min="5" max="60" value="15">
+                            <span id="s-overlay-duration-val" class="settings-range-val">15s</span>
+                        </div>
                     </div>
 
                     <button type="submit" class="settings-save-btn">Save</button>

@@ -1,5 +1,26 @@
 /* AgentsTV — Twitch-style agent session viewer */
 
+const TUNING_DEFAULTS = {
+    chatSpeed: 'normal',       // slow | normal | fast
+    narratorFreq: 20,          // seconds (center of random range)
+    tipChance: 15,             // percent
+    reactionChance: 50,        // percent
+    bufferSize: 10,            // messages
+    overlayDuration: 15,       // seconds
+};
+
+function loadTuning() {
+    try {
+        const raw = localStorage.getItem('agenttv_tuning');
+        return raw ? { ...TUNING_DEFAULTS, ...JSON.parse(raw) } : { ...TUNING_DEFAULTS };
+    } catch { return { ...TUNING_DEFAULTS }; }
+}
+
+function saveTuning(t) {
+    state.tuning = t;
+    try { localStorage.setItem('agenttv_tuning', JSON.stringify(t)); } catch {}
+}
+
 const ICONS = {
     spawn: '★', think: '◆', tool_call: '▸', tool_result: '◂',
     file_create: '+', file_update: '~', file_read: '○',
@@ -78,6 +99,9 @@ let state = {
     monitorContentType: null, // event type for styling
     llmEnabled: true,         // LLM on/off toggle
     replyToEventIndex: null,  // index of event being replied to
+    viewerAutoScroll: true,
+    viewerMsgCount: 0,
+    agentMsgCount: 0,
     // Master channel state
     masterEvents: [],
     masterAgents: {},
@@ -87,6 +111,8 @@ let state = {
     codeOverlayTimer: null,
     // Master monitor real content
     masterMonitorContent: [],
+    // Tuning settings (localStorage)
+    tuning: loadTuning(),
 };
 
 // ============================================================
@@ -108,6 +134,18 @@ async function openSettings() {
         // Fetch available Ollama models for the dropdown
         await populateOllamaModels(cfg.ollama_model || 'qwen3:14b');
         toggleProviderFields();
+        // Populate tuning fields
+        const t = state.tuning;
+        document.getElementById('s-chat-speed').value = t.chatSpeed;
+        document.getElementById('s-narrator-freq').value = t.narratorFreq;
+        document.getElementById('s-narrator-freq-val').textContent = t.narratorFreq + 's';
+        document.getElementById('s-tip-chance').value = t.tipChance;
+        document.getElementById('s-tip-chance-val').textContent = t.tipChance + '%';
+        document.getElementById('s-reaction-chance').value = t.reactionChance;
+        document.getElementById('s-reaction-chance-val').textContent = t.reactionChance + '%';
+        document.getElementById('s-buffer-size').value = t.bufferSize;
+        document.getElementById('s-overlay-duration').value = t.overlayDuration;
+        document.getElementById('s-overlay-duration-val').textContent = t.overlayDuration + 's';
     } catch (e) {
         document.getElementById('settings-msg').textContent = 'Failed to load settings';
         document.getElementById('settings-msg').className = 'settings-msg err';
@@ -194,6 +232,15 @@ async function saveSettings(e) {
             body: JSON.stringify(body),
         });
         if (!resp.ok) throw new Error('Save failed');
+        // Save tuning to localStorage
+        saveTuning({
+            chatSpeed: document.getElementById('s-chat-speed').value,
+            narratorFreq: parseInt(document.getElementById('s-narrator-freq').value, 10),
+            tipChance: parseInt(document.getElementById('s-tip-chance').value, 10),
+            reactionChance: parseInt(document.getElementById('s-reaction-chance').value, 10),
+            bufferSize: parseInt(document.getElementById('s-buffer-size').value, 10),
+            overlayDuration: parseInt(document.getElementById('s-overlay-duration').value, 10),
+        });
         // Sync LLM toggle state
         state.llmEnabled = body.provider !== 'off';
         syncLlmToggleUI();
@@ -223,6 +270,20 @@ async function saveSettings(e) {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeSettings();
     });
+    // Tuning section toggle
+    document.getElementById('tuning-toggle').addEventListener('click', () => {
+        const fields = document.getElementById('tuning-fields');
+        const toggle = document.getElementById('tuning-toggle');
+        const open = fields.style.display === 'none';
+        fields.style.display = open ? '' : 'none';
+        toggle.textContent = (open ? '▾' : '▸') + ' Tuning';
+    });
+    // Range input live display
+    for (const [id, suffix] of [['s-narrator-freq', 's'], ['s-tip-chance', '%'], ['s-reaction-chance', '%'], ['s-overlay-duration', 's']]) {
+        document.getElementById(id).addEventListener('input', () => {
+            document.getElementById(id + '-val').textContent = document.getElementById(id).value + suffix;
+        });
+    }
     // Fetch initial LLM state to set toggle
     fetch('/api/settings').then(r => r.json()).then(cfg => {
         state.llmEnabled = cfg.provider !== 'off';
@@ -286,7 +347,7 @@ let _previousProvider = 'ollama';
         const msg = input.value.trim();
         if (!msg || !state.llmEnabled) return;
 
-        const log = document.getElementById('event-log');
+        const log = document.getElementById('viewer-log') || document.getElementById('event-log');
         input.value = '';
         input.disabled = true;
         sendBtn.disabled = true;
@@ -298,11 +359,12 @@ let _previousProvider = 'ollama';
             + `<span class="chat-name" style="color:var(--purple-light)">you</span>`
             + `<span class="chat-text">${esc(msg)}</span>`;
         log.appendChild(userDiv);
+        updateViewerCount();
 
         // Show thinking state in input bar
         input.placeholder = 'thinking...';
         input.classList.add('thinking');
-        if (state.autoScroll) log.scrollTop = log.scrollHeight;
+        if (state.viewerAutoScroll) log.scrollTop = log.scrollHeight;
 
         // Build request
         const body = {
@@ -333,6 +395,7 @@ let _previousProvider = 'ollama';
                     + `<span class="chat-text" style="color:var(--text-muted)">${esc(data.error || 'No response')}</span>`;
             }
             log.appendChild(replyDiv);
+            updateViewerCount();
             // Schedule viewer reactions to user's message
             reactToUserChat(msg);
         } catch (e) {
@@ -342,6 +405,7 @@ let _previousProvider = 'ollama';
                 + `<span class="chat-name" style="color:var(--green)">codemonkey_mod</span>`
                 + `<span class="chat-text" style="color:var(--red-soft)">Failed to reach LLM</span>`;
             log.appendChild(errDiv);
+            updateViewerCount();
         } finally {
             // Always re-enable input
             state.replyToEventIndex = null;
@@ -351,7 +415,7 @@ let _previousProvider = 'ollama';
             input.classList.remove('thinking');
             sendBtn.disabled = false;
             input.focus();
-            if (state.autoScroll) log.scrollTop = log.scrollHeight;
+            if (state.viewerAutoScroll) log.scrollTop = log.scrollHeight;
         }
     }
 
@@ -483,7 +547,7 @@ function updateCodeOverlay(type, content, filePath) {
     state.codeOverlayTimer = setTimeout(() => {
         overlay.classList.remove('visible');
         state.codeOverlayTimer = null;
-    }, 15000);
+    }, (state.tuning.overlayDuration || 15) * 1000);
 }
 
 function hideCodeOverlay() {
@@ -1874,7 +1938,11 @@ async function showSessionView(filePath) {
     document.getElementById('session-view').style.display = 'flex';
 
     document.getElementById('back-btn').onclick = () => navigate('#/');
-    document.getElementById('event-log').innerHTML = '<div style="padding:20px;color:var(--text-muted)">Connecting to stream…</div>';
+    document.getElementById('event-log').innerHTML = '';
+    const viewerLogInit = document.getElementById('viewer-log');
+    if (viewerLogInit) viewerLogInit.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Connecting to stream…</div>';
+    const vcc = document.getElementById('viewer-chat-count'); if (vcc) vcc.textContent = '';
+    const alc = document.getElementById('agent-log-count'); if (alc) alc.textContent = '';
 
     setupActions(filePath);
 
@@ -1903,7 +1971,7 @@ async function showSessionView(filePath) {
         const resp = await fetch('/api/session/' + encodeURIComponent(filePath));
         const data = await resp.json();
         if (data.error) {
-            document.getElementById('event-log').innerHTML = `<div style="padding:20px;color:var(--text-muted)">${esc(data.error)}</div>`;
+            (document.getElementById('viewer-log') || document.getElementById('event-log')).innerHTML = `<div style="padding:20px;color:var(--text-muted)">${esc(data.error)}</div>`;
             return;
         }
         state.session = data;
@@ -1918,7 +1986,7 @@ async function showSessionView(filePath) {
         syncLlmToggleUI();
         if (state.llmEnabled) startViewerChat();
     } catch (e) {
-        document.getElementById('event-log').innerHTML = `<div style="padding:20px;color:var(--text-muted)">Failed to connect to stream</div>`;
+        (document.getElementById('viewer-log') || document.getElementById('event-log')).innerHTML = `<div style="padding:20px;color:var(--text-muted)">Failed to connect to stream</div>`;
     }
 }
 
@@ -1967,7 +2035,7 @@ function setupActions(filePath) {
 }
 
 function addTipToChat(amount) {
-    const log = document.getElementById('event-log');
+    const log = document.getElementById('viewer-log') || document.getElementById('event-log');
     const names = ['viewer_42', 'code_fan99', 'pixel_dev', 'stream_lurker', 'bug_hunter',
                    'git_pusher', 'regex_queen', 'null_ptr', 'sudo_user', 'mr_merge'];
     const name = names[Math.floor(Math.random() * names.length)];
@@ -1985,6 +2053,7 @@ function addTipToChat(amount) {
         + `<span class="tip-amount">${fmtTokens(amount)} tokens</span> `
         + `<span class="chat-text">${esc(msg)}</span>`;
     log.appendChild(div);
+    updateViewerCount();
 
     // Streamer reacts to tip in chat
     setTimeout(() => {
@@ -2003,10 +2072,11 @@ function addTipToChat(amount) {
             + `<span class="chat-name" style="color:var(--purple)">${esc(streamerName)}</span>`
             + `<span class="chat-text">${esc(reaction)}</span>`;
         log.appendChild(replyDiv);
-        if (state.autoScroll) log.scrollTop = log.scrollHeight;
+        updateViewerCount();
+        if (state.viewerAutoScroll) log.scrollTop = log.scrollHeight;
     }, 800 + Math.random() * 1200);
 
-    if (state.autoScroll) log.scrollTop = log.scrollHeight;
+    if (state.viewerAutoScroll) log.scrollTop = log.scrollHeight;
 }
 
 const VIEWER_NAMES = [
@@ -2153,9 +2223,12 @@ function startViewerChat() {
     // Pre-fetch LLM messages before starting the chat timer
     const ready = state.llmEnabled ? fetchViewerChatBatch() : Promise.resolve();
     function scheduleNext() {
-        // Master mode: faster viewer chat to keep up with multi-project event volume
+        // Chat speed from tuning settings; master mode always uses fast
         const isMaster = state.view === 'master';
-        const delay = isMaster ? (1000 + Math.random() * 2000) : (3000 + Math.random() * 7000);
+        const speed = isMaster ? 'fast' : (state.tuning.chatSpeed || 'normal');
+        const delay = speed === 'fast' ? (1000 + Math.random() * 2000)
+            : speed === 'slow' ? (5000 + Math.random() * 10000)
+            : (3000 + Math.random() * 7000);
         state.viewerChatTimer = setTimeout(() => {
             addViewerChatMessage();
             scheduleNext();
@@ -2179,7 +2252,8 @@ function startNarratorChat() {
     stopNarratorChat();
     if (!state.llmEnabled) return;
     function scheduleNext() {
-        const delay = 12000 + Math.random() * 18000; // 12-30s between messages
+        const center = (state.tuning.narratorFreq || 20) * 1000;
+        const delay = center * 0.6 + Math.random() * center * 0.8; // ±40% around center
         state.narratorChatTimer = setTimeout(() => {
             if (!state.llmEnabled) { stopNarratorChat(); return; }
             addNarratorMessage();
@@ -2197,7 +2271,7 @@ function stopNarratorChat() {
 }
 
 async function addNarratorMessage() {
-    const log = document.getElementById('event-log');
+    const log = document.getElementById('viewer-log') || document.getElementById('event-log');
     if (!log || !state.sessionFilePath) return;
 
     try {
@@ -2212,7 +2286,8 @@ async function addNarratorMessage() {
             + `<span class="chat-name" style="color:var(--gold)">caster_bot</span>`
             + `<span class="chat-text">${esc(data.message)}</span>`;
         log.appendChild(div);
-        if (state.autoScroll) log.scrollTop = log.scrollHeight;
+        updateViewerCount();
+        if (state.viewerAutoScroll) log.scrollTop = log.scrollHeight;
     } catch (e) {
         // narrator unavailable, skip silently
     }
@@ -2226,7 +2301,7 @@ let llmFallbackShown = false;
 function showLlmFallbackNotice(error) {
     if (llmFallbackShown) return;
     llmFallbackShown = true;
-    const log = document.getElementById('event-log');
+    const log = document.getElementById('viewer-log') || document.getElementById('event-log');
     if (!log) return;
     const div = document.createElement('div');
     div.className = 'chat-msg llm-fallback-notice';
@@ -2235,15 +2310,17 @@ function showLlmFallbackNotice(error) {
         + `<span class="chat-text" style="color:var(--text-dim);font-style:italic">`
         + `Chat is using fallback messages (LLM error: ${esc(short)})</span>`;
     log.appendChild(div);
-    if (state.autoScroll) log.scrollTop = log.scrollHeight;
+    updateViewerCount();
+    if (state.viewerAutoScroll) log.scrollTop = log.scrollHeight;
 }
 
 async function fetchViewerChatBatch() {
     if (viewerChatFetching || !state.sessionFilePath) return;
     viewerChatFetching = true;
     try {
-        // Fetch 10 messages to build a buffer ahead of consumption
-        for (let i = 0; i < 10; i++) {
+        // Fetch messages to build a buffer ahead of consumption
+        const bufSize = state.tuning.bufferSize || 10;
+        for (let i = 0; i < bufSize; i++) {
             const resp = await fetch('/api/viewer-chat/' + encodeURIComponent(state.sessionFilePath));
             if (!resp.ok) break;
             const data = await resp.json();
@@ -2262,12 +2339,12 @@ async function fetchViewerChatBatch() {
 }
 
 function addViewerChatMessage() {
-    const log = document.getElementById('event-log');
+    const log = document.getElementById('viewer-log') || document.getElementById('event-log');
     if (!log) return;
 
-    // ~15% chance of a random viewer tip instead of a chat message
-    if (Math.random() < 0.15) {
-        addRandomViewerTip(log);
+    // Chance of a random viewer tip instead of a chat message
+    if (Math.random() < (state.tuning.tipChance || 15) / 100) {
+        addRandomViewerTip();
         return;
     }
 
@@ -2321,11 +2398,13 @@ function addViewerChatMessage() {
         + `<span class="chat-name" style="color:${color}">${esc(name)}</span>`
         + `<span class="chat-text">${esc(msg)}</span>`;
     log.appendChild(div);
+    updateViewerCount();
 
-    if (state.autoScroll) log.scrollTop = log.scrollHeight;
+    if (state.viewerAutoScroll) log.scrollTop = log.scrollHeight;
 }
 
-function addRandomViewerTip(log) {
+function addRandomViewerTip() {
+    const log = document.getElementById('viewer-log') || document.getElementById('event-log');
     const amounts = [100, 100, 100, 250, 500, 500, 1000, 2500];
     const amount = amounts[Math.floor(Math.random() * amounts.length)];
     const name = VIEWER_NAMES[Math.floor(Math.random() * VIEWER_NAMES.length)];
@@ -2348,7 +2427,8 @@ function addRandomViewerTip(log) {
         + `<span class="tip-amount">${fmtTokens(amount)} tokens</span> `
         + `<span class="chat-text">${esc(msg)}</span>`;
     log.appendChild(div);
-    if (state.autoScroll) log.scrollTop = log.scrollHeight;
+    updateViewerCount();
+    if (state.viewerAutoScroll) log.scrollTop = log.scrollHeight;
 
     // Streamer reacts
     setTimeout(() => {
@@ -2365,7 +2445,8 @@ function addRandomViewerTip(log) {
             + `<span class="chat-name" style="color:var(--purple)">${esc(streamerName)}</span>`
             + `<span class="chat-text">${esc(reaction)}</span>`;
         log.appendChild(replyDiv);
-        if (state.autoScroll) log.scrollTop = log.scrollHeight;
+        updateViewerCount();
+        if (state.viewerAutoScroll) log.scrollTop = log.scrollHeight;
     }, 800 + Math.random() * 1200);
 }
 
@@ -2375,10 +2456,10 @@ const REACTION_FALLBACKS = [
 ];
 
 function reactToUserChat(userMessage) {
-    // 50% chance of firing
-    if (Math.random() > 0.5) return;
+    // Configurable chance of firing
+    if (Math.random() > (state.tuning.reactionChance || 50) / 100) return;
 
-    const log = document.getElementById('event-log');
+    const log = document.getElementById('viewer-log') || document.getElementById('event-log');
     if (!log) return;
 
     const colors = ['#9146ff', '#00b4d8', '#f0c674', '#00e676', '#ff6b6b', '#81d4fa', '#e74c3c', '#8abeb7'];
@@ -2399,7 +2480,8 @@ function reactToUserChat(userMessage) {
                         + `<span class="chat-name" style="color:${color}">${esc(r.name)}</span>`
                         + `<span class="chat-text">${esc(r.message)}</span>`;
                     log.appendChild(div);
-                    if (state.autoScroll) log.scrollTop = log.scrollHeight;
+                    updateViewerCount();
+                    if (state.viewerAutoScroll) log.scrollTop = log.scrollHeight;
                 }, delay + i * 1500);
             });
         }).catch(() => {});
@@ -2414,7 +2496,8 @@ function reactToUserChat(userMessage) {
                 + `<span class="chat-name" style="color:${color}">${esc(name)}</span>`
                 + `<span class="chat-text">${esc(msg)}</span>`;
             log.appendChild(div);
-            if (state.autoScroll) log.scrollTop = log.scrollHeight;
+            updateViewerCount();
+            if (state.viewerAutoScroll) log.scrollTop = log.scrollHeight;
         }, delay);
     }
 }
@@ -2577,20 +2660,25 @@ function appendChatMessage(log, evt, s, isMaster, evtIndex) {
 
     log.appendChild(div);
     log.appendChild(expanded);
+    updateAgentCount();
 }
 
 function updateChatCounters(s) {
     document.getElementById('event-count').textContent = `${s.events.length}`;
     document.getElementById('viewer-list-count').textContent = `(${Object.keys(state.inventory).length})`;
     document.getElementById('mod-count').textContent = `(${Object.keys(s.agents).length})`;
+    updateAgentCount();
+    updateViewerCount();
     renderViewerCount();
     renderViewers();
 }
 
 function renderChatLog(s) {
     const log = document.getElementById('event-log');
+    const viewerLog = document.getElementById('viewer-log');
     const wasAtBottom = state.autoScroll;
     log.innerHTML = '';
+    if (viewerLog) viewerLog.innerHTML = '';
     state.inventory = {};
 
     let lastEvent = null;
@@ -2788,7 +2876,11 @@ async function showMasterChannel() {
     document.getElementById('session-view').style.display = 'flex';
 
     document.getElementById('back-btn').onclick = () => navigate('#/');
-    document.getElementById('event-log').innerHTML = '<div style="padding:20px;color:var(--text-muted)">Loading all streams…</div>';
+    document.getElementById('event-log').innerHTML = '';
+    const viewerLogMasterInit = document.getElementById('viewer-log');
+    if (viewerLogMasterInit) viewerLogMasterInit.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Loading all streams…</div>';
+    const vcc2 = document.getElementById('viewer-chat-count'); if (vcc2) vcc2.textContent = '';
+    const alc2 = document.getElementById('agent-log-count'); if (alc2) alc2.textContent = '';
 
     setupActions('__master__');
 
@@ -2834,7 +2926,7 @@ async function showMasterChannel() {
         syncLlmToggleUI();
         if (state.llmEnabled) startViewerChat();
     } catch (e) {
-        document.getElementById('event-log').innerHTML = '<div style="padding:20px;color:var(--text-muted)">Failed to load master channel</div>';
+        (document.getElementById('viewer-log') || document.getElementById('event-log')).innerHTML = '<div style="padding:20px;color:var(--text-muted)">Failed to load master channel</div>';
     }
 }
 
@@ -2854,8 +2946,10 @@ function renderMasterSession() {
 
 function renderMasterChatLog(s) {
     const log = document.getElementById('event-log');
+    const viewerLog = document.getElementById('viewer-log');
     const wasAtBottom = state.autoScroll;
     log.innerHTML = '';
+    if (viewerLog) viewerLog.innerHTML = '';
     state.inventory = {};
 
     s.events.forEach((evt, idx) => {
@@ -3358,9 +3452,66 @@ function drawControlRoom(canvas, frame) {
 // INIT
 // ============================================================
 
+function updateViewerCount() {
+    const el = document.getElementById('viewer-chat-count');
+    if (!el) return;
+    const log = document.getElementById('viewer-log');
+    if (log) el.textContent = `(${log.children.length})`;
+}
+
+function updateAgentCount() {
+    const el = document.getElementById('agent-log-count');
+    if (!el) return;
+    const log = document.getElementById('event-log');
+    if (log) el.textContent = `(${log.querySelectorAll('.chat-msg').length})`;
+}
+
+function setupDividerDrag() {
+    const divider = document.querySelector('.chat-pane-divider');
+    if (!divider) return;
+    const viewerPane = divider.previousElementSibling;
+    const agentPane = divider.nextElementSibling;
+    if (!viewerPane || !agentPane) return;
+
+    let startY, startViewerFlex, startAgentFlex;
+
+    divider.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        startY = e.clientY;
+        const container = divider.parentElement;
+        const totalHeight = container.clientHeight - divider.offsetHeight;
+        startViewerFlex = viewerPane.offsetHeight / totalHeight;
+        startAgentFlex = agentPane.offsetHeight / totalHeight;
+
+        function onMouseMove(e) {
+            const delta = e.clientY - startY;
+            const totalHeight = divider.parentElement.clientHeight - divider.offsetHeight;
+            const deltaFrac = delta / totalHeight;
+            let newViewer = startViewerFlex + deltaFrac;
+            let newAgent = startAgentFlex - deltaFrac;
+            // Clamp minimum 10%
+            if (newViewer < 0.1) { newViewer = 0.1; newAgent = 0.9; }
+            if (newAgent < 0.1) { newAgent = 0.1; newViewer = 0.9; }
+            viewerPane.style.flex = newViewer.toString();
+            agentPane.style.flex = newAgent.toString();
+        }
+
+        function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        }
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    });
+}
+
 function setupScrollListener() {
     const log = document.getElementById('event-log');
+    const viewerLog = document.getElementById('viewer-log');
     const scrollBtn = document.getElementById('scroll-bottom-btn');
+
+    // Agent log scroll
     if (log && !log.dataset.scrollBound) {
         log.dataset.scrollBound = '1';
         log.addEventListener('scroll', () => {
@@ -3374,6 +3525,15 @@ function setupScrollListener() {
             }
         }, { passive: true });
     }
+
+    // Viewer log scroll
+    if (viewerLog && !viewerLog.dataset.scrollBound) {
+        viewerLog.dataset.scrollBound = '1';
+        viewerLog.addEventListener('scroll', () => {
+            state.viewerAutoScroll = viewerLog.scrollTop + viewerLog.clientHeight >= viewerLog.scrollHeight - 30;
+        }, { passive: true });
+    }
+
     if (scrollBtn) {
         scrollBtn.onclick = () => {
             log.scrollTop = log.scrollHeight;
@@ -3381,6 +3541,8 @@ function setupScrollListener() {
             scrollBtn.style.display = 'none';
         };
     }
+
+    setupDividerDrag();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
