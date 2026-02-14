@@ -606,12 +606,13 @@ def main(args: list[str] | None = None) -> None:
         sock.close()
 
     url = f"http://{host}:{port}"
+    browser_url = f"http://localhost:{port}" if host == "0.0.0.0" else url
     mode = " (PUBLIC MODE — secrets redacted)" if PUBLIC_MODE else ""
     print(f"agent-replay v{__version__} — starting at {url}{mode}")
 
     if not no_browser:
         # Open browser after a short delay to let server start
         import threading
-        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+        threading.Timer(1.0, lambda: webbrowser.open(browser_url)).start()
 
     uvicorn.run(app, host=host, port=port, log_level="warning")
