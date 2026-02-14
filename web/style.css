@@ -501,7 +501,13 @@ body {
 }
 .chat-msg .chat-name::after { content: ": "; color: var(--text-dim); }
 
-.chat-msg .chat-text { color: var(--text-dim); }
+.chat-msg .chat-text {
+    color: var(--text-dim);
+    white-space: normal;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
 
 /* Tip messages */
 .chat-msg.is-tip {
