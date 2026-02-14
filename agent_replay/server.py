@@ -251,7 +251,11 @@ def _build_context(session_data: dict, n: int = 5) -> str:
             lines.append(f"[{kind}] {content_preview}")
         else:
             lines.append(f"[{kind}]")
-    return "\n".join(lines) if lines else "The AI coder is working on a project."
+    if lines:
+        return "\n".join(lines)
+    import random
+    names = ["The coder", "Our code monkey", "The engineer", "Master coder", "The dev"]
+    return f"{random.choice(names)} is working on a project."
 
 
 @app.get("/api/viewer-chat/{session_id:path}")
@@ -297,6 +301,24 @@ async def viewer_chat(session_id: str):
 
     # Fallback — empty means client should use hardcoded messages
     return {"name": "", "message": ""}
+
+
+@app.post("/api/viewer-react")
+async def viewer_react(request: Request):
+    """Generate 1-2 viewer reactions to a user's chat message."""
+    import random
+
+    body = await request.json()
+    user_message = body.get("message", "").strip()
+    if not user_message:
+        return {"reactions": []}
+
+    messages = await llm.generate_viewer_reaction(user_message)
+    reactions = [
+        {"name": random.choice(VIEWER_NAMES), "message": msg}
+        for msg in messages
+    ]
+    return {"reactions": reactions}
 
 
 @app.get("/api/narrator/{session_id:path}")

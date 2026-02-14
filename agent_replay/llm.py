@@ -5,17 +5,35 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 
 import httpx
 
 log = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    "You are a Twitch chat viewer watching an AI coding stream. "
-    "Generate short chat messages (under 15 words each) reacting to what the coder just did. "
-    "Be casual, use slang, emojis optional. Vary the tone: hype, jokes, backseat coding, questions. "
-    "Return a JSON array of strings, nothing else."
-)
+STREAMER_NAMES = [
+    "the coder", "our code monkey", "the engineer",
+    "master coder", "the dev", "chief architect",
+]
+
+
+def _random_streamer() -> str:
+    return random.choice(STREAMER_NAMES)
+
+
+def _system_prompt() -> str:
+    name = _random_streamer()
+    return (
+        "You are a Twitch chat viewer watching a live AI coding stream. "
+        f"Generate short chat messages (under 20 words each) reacting to what {name} just did. "
+        "Be casual, use slang, emojis optional. Mix these tones:\n"
+        "- Hype and reactions\n"
+        "- Specific code observations (\"that regex is wild\", \"clean error handling\")\n"
+        "- Backseat coding suggestions\n"
+        "- Technical questions about the code\n"
+        "- Jokes referencing the actual files/tools being used\n"
+        "Return a JSON array of strings, nothing else."
+    )
 
 SYSTEM_PROMPT_EXPLAIN = (
     "You are a brief coding stream commentator. When asked about an AI agent's actions, "
@@ -29,6 +47,13 @@ SYSTEM_PROMPT_NARRATOR = (
     "Give play-by-play commentary on what just happened. Be dramatic but brief (1-2 sentences). "
     "Use present tense. Reference specific files, tools, or actions. "
     "Return a JSON array of 3 strings, nothing else."
+)
+
+SYSTEM_PROMPT_REACT = (
+    "You are a Twitch chat viewer. Another chatter just said something. "
+    "Generate 1-2 very short casual reactions (under 10 words each). "
+    "Be natural — agree, disagree, meme, or riff on what they said. "
+    "Return a JSON array of strings, nothing else."
 )
 
 # Provider config — set via env vars or CLI flags
@@ -82,16 +107,18 @@ async def generate_viewer_messages(context: str, count: int = 5) -> list[str]:
     if LLM_PROVIDER == "off":
         return []
 
+    name = _random_streamer()
     user_prompt = (
-        f"Here are the last few things the AI coder did:\n{context}\n\n"
+        f"Here are the last few things {name} did:\n{context}\n\n"
         f"Generate {count} different short viewer chat messages reacting to this."
     )
+    system = _system_prompt()
 
     try:
         if LLM_PROVIDER == "openai":
-            return await _call_openai(user_prompt, SYSTEM_PROMPT, count=count)
+            return await _call_openai(user_prompt, system, count=count)
         else:
-            return await _call_ollama(user_prompt, SYSTEM_PROMPT, count=count)
+            return await _call_ollama(user_prompt, system, count=count)
     except Exception:
         log.debug("LLM call failed", exc_info=True)
         return []
@@ -136,8 +163,9 @@ async def generate_narrator_messages(context: str, count: int = 3) -> list[str]:
     if LLM_PROVIDER == "off":
         return []
 
+    name = _random_streamer()
     user_prompt = (
-        f"Here is what the AI coder just did:\n{context}\n\n"
+        f"Here is what {name} just did:\n{context}\n\n"
         f"Generate {count} dramatic play-by-play commentary lines about this."
     )
 
@@ -151,9 +179,32 @@ async def generate_narrator_messages(context: str, count: int = 3) -> list[str]:
         return []
 
 
+async def generate_viewer_reaction(user_message: str) -> list[str]:
+    """Generate 1-2 viewer reactions to a user's chat message.
+
+    Returns a list of strings, or an empty list on failure.
+    """
+    if LLM_PROVIDER == "off":
+        return []
+
+    user_prompt = (
+        f"A chatter said: \"{user_message}\"\n\n"
+        "Generate 1-2 casual viewer reactions."
+    )
+
+    try:
+        if LLM_PROVIDER == "openai":
+            return await _call_openai(user_prompt, SYSTEM_PROMPT_REACT, count=2)
+        else:
+            return await _call_ollama(user_prompt, SYSTEM_PROMPT_REACT, count=2)
+    except Exception:
+        log.debug("Viewer reaction LLM call failed", exc_info=True)
+        return []
+
+
 async def _call_ollama(
     user_prompt: str,
-    system_prompt: str = SYSTEM_PROMPT,
+    system_prompt: str = "",
     *,
     count: int = 5,
     raw: bool = False,
@@ -181,7 +232,7 @@ async def _call_ollama(
 
 async def _call_openai(
     user_prompt: str,
-    system_prompt: str = SYSTEM_PROMPT,
+    system_prompt: str = "",
     *,
     count: int = 5,
     raw: bool = False,

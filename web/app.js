@@ -325,19 +325,21 @@ let _previousProvider = 'ollama';
             replyDiv.className = 'chat-msg llm-reply';
             if (data.reply) {
                 replyDiv.innerHTML = `<span class="chat-badge">&#x1F9E0;</span>`
-                    + `<span class="chat-name" style="color:var(--green)">assistant</span>`
+                    + `<span class="chat-name" style="color:var(--green)">codemonkey_mod</span>`
                     + `<span class="chat-text">${esc(data.reply)}</span>`;
             } else {
                 replyDiv.innerHTML = `<span class="chat-badge">&#x1F9E0;</span>`
-                    + `<span class="chat-name" style="color:var(--green)">assistant</span>`
+                    + `<span class="chat-name" style="color:var(--green)">codemonkey_mod</span>`
                     + `<span class="chat-text" style="color:var(--text-muted)">${esc(data.error || 'No response')}</span>`;
             }
             log.appendChild(replyDiv);
+            // Schedule viewer reactions to user's message
+            reactToUserChat(msg);
         } catch (e) {
             const errDiv = document.createElement('div');
             errDiv.className = 'chat-msg llm-reply';
             errDiv.innerHTML = `<span class="chat-badge">&#x1F9E0;</span>`
-                + `<span class="chat-name" style="color:var(--green)">assistant</span>`
+                + `<span class="chat-name" style="color:var(--green)">codemonkey_mod</span>`
                 + `<span class="chat-text" style="color:var(--red-soft)">Failed to reach LLM</span>`;
             log.appendChild(errDiv);
         } finally {
@@ -590,22 +592,24 @@ function drawPixelScene(canvas, seed, frame, isLarge) {
     ctx.fillRect(w * 0.15, deskY + deskH, px * 2, h * 0.17);
     ctx.fillRect(w * 0.81, deskY + deskH, px * 2, h * 0.17);
 
-    // Monitor(s) based on setup
+    // Character sits behind the desk — drawn before monitors so it peeks out
     const typingMult = isLarge ? state.typingSpeed : 1.0;
-    drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult, isLarge, canvas);
-
-    // Chair
     const charX = w * 0.42;
-    const charY = deskY - px * 2;
+    const charY = deskY - px * 8; // shifted up so head peeks above monitor
+
+    // Chair (behind everything)
     ctx.fillStyle = darken(palette.chair, 20);
     ctx.fillRect(charX - px * 2, charY - px * 4, px * 14, px * 8);
     ctx.fillStyle = palette.chair;
     ctx.fillRect(charX - px, charY - px * 3, px * 12, px * 6);
 
-    // Character
+    // Character body + head (behind monitor, head peeks above)
     drawCharacter(ctx, w, h, px, palette, charX, charY, deskY, frame, rxType, rxProgress, typingMult);
 
-    // Keyboard with dynamic key lighting
+    // Monitor(s) based on setup — drawn after character so desk/monitor is in front
+    drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult, isLarge, canvas);
+
+    // Keyboard with dynamic key lighting (on desk, in front of monkey)
     ctx.fillStyle = '#3a3a44';
     ctx.fillRect(charX - px, deskY - px * 2, px * 12, px * 2);
     for (let k = 0; k < 5; k++) {
@@ -2018,6 +2022,11 @@ const VIEWER_MESSAGES = [
     'that refactor tho', 'ship it!', 'clean af', 'no bugs pls',
     'that function name 😂', 'why not use recursion', 'types are everything',
     'imagine not using git', 'just use a hashmap', 'O(n) gang',
+    // Code discussion
+    'that error handling is solid', 'the naming conventions here >>>', 'modular king',
+    'wait is that a race condition?', 'dependency injection ftw', 'love the separation of concerns',
+    'single responsibility principle in action', 'that import tree tho', 'clean architecture vibes',
+    'needs a try-catch around that', 'the abstraction is *chefs kiss*',
     // Questions
     'what lang is this?', 'can you explain that?', 'what IDE is that?',
     'how long have you been coding?', 'whats the tech stack?',
@@ -2034,7 +2043,7 @@ function startViewerChat() {
     // Pre-fetch LLM messages if enabled
     if (state.llmEnabled) fetchViewerChatBatch();
     function scheduleNext() {
-        const delay = 4000 + Math.random() * 12000; // 4-16s between messages
+        const delay = 3000 + Math.random() * 7000; // 3-10s between messages
         state.viewerChatTimer = setTimeout(() => {
             addViewerChatMessage();
             scheduleNext();
@@ -2058,7 +2067,7 @@ function startNarratorChat() {
     stopNarratorChat();
     if (!state.llmEnabled) return;
     function scheduleNext() {
-        const delay = 15000 + Math.random() * 25000; // 15-40s between messages
+        const delay = 12000 + Math.random() * 18000; // 12-30s between messages
         state.narratorChatTimer = setTimeout(() => {
             if (!state.llmEnabled) { stopNarratorChat(); return; }
             addNarratorMessage();
@@ -2204,6 +2213,56 @@ function addRandomViewerTip(log) {
         log.appendChild(replyDiv);
         if (state.autoScroll) log.scrollTop = log.scrollHeight;
     }, 800 + Math.random() * 1200);
+}
+
+const REACTION_FALLBACKS = [
+    'good question', 'I was wondering the same', 'real', 'chat is alive today',
+    '^^^ this', 'true', 'lol same', 'fr fr', 'big facts', '+1',
+];
+
+function reactToUserChat(userMessage) {
+    // 50% chance of firing
+    if (Math.random() > 0.5) return;
+
+    const log = document.getElementById('event-log');
+    if (!log) return;
+
+    const colors = ['#9146ff', '#00b4d8', '#f0c674', '#00e676', '#ff6b6b', '#81d4fa', '#e74c3c', '#8abeb7'];
+    const delay = 1500 + Math.random() * 3000;
+
+    if (state.llmEnabled) {
+        fetch('/api/viewer-react', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: userMessage }),
+        }).then(r => r.json()).then(data => {
+            (data.reactions || []).forEach((r, i) => {
+                setTimeout(() => {
+                    const color = colors[Math.floor(Math.random() * colors.length)];
+                    const div = document.createElement('div');
+                    div.className = 'chat-msg viewer-chat';
+                    div.innerHTML = `<span class="chat-badge">💬</span>`
+                        + `<span class="chat-name" style="color:${color}">${esc(r.name)}</span>`
+                        + `<span class="chat-text">${esc(r.message)}</span>`;
+                    log.appendChild(div);
+                    if (state.autoScroll) log.scrollTop = log.scrollHeight;
+                }, delay + i * 1500);
+            });
+        }).catch(() => {});
+    } else {
+        setTimeout(() => {
+            const name = VIEWER_NAMES[Math.floor(Math.random() * VIEWER_NAMES.length)];
+            const msg = REACTION_FALLBACKS[Math.floor(Math.random() * REACTION_FALLBACKS.length)];
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            const div = document.createElement('div');
+            div.className = 'chat-msg viewer-chat';
+            div.innerHTML = `<span class="chat-badge">💬</span>`
+                + `<span class="chat-name" style="color:${color}">${esc(name)}</span>`
+                + `<span class="chat-text">${esc(msg)}</span>`;
+            log.appendChild(div);
+            if (state.autoScroll) log.scrollTop = log.scrollHeight;
+        }, delay);
+    }
 }
 
 function buildStreamTitle(session) {
