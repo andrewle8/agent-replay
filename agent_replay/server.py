@@ -238,19 +238,32 @@ VIEWER_NAMES = [
 
 
 def _build_context(session_data: dict, n: int = 5) -> str:
-    """Build a context string from the last N events of a session."""
+    """Build a context string from the last N events of a session.
+
+    Includes file paths, tool names, and richer content so the LLM can
+    generate code-specific viewer chat (referencing actual files, languages,
+    commands, and patterns).
+    """
     events = session_data.get("events", [])[-n:]
     lines = []
     for evt in events:
         kind = evt.get("type", "unknown")
+        tool = evt.get("tool_name", "")
+        fpath = evt.get("short_path", "") or evt.get("file_path", "")
+        content_preview = (evt.get("content", "") or "")[:400]
         summary = evt.get("summary", "")
-        content_preview = (evt.get("content", "") or "")[:200]
+
+        # Build a rich single-line description
+        parts = [f"[{kind}]"]
+        if tool:
+            parts.append(f"tool={tool}")
+        if fpath:
+            parts.append(f"file={fpath}")
         if summary:
-            lines.append(f"[{kind}] {summary}")
+            parts.append(summary)
         elif content_preview:
-            lines.append(f"[{kind}] {content_preview}")
-        else:
-            lines.append(f"[{kind}]")
+            parts.append(content_preview)
+        lines.append(" ".join(parts))
     if lines:
         return "\n".join(lines)
     import random

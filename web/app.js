@@ -2014,28 +2014,51 @@ const VIEWER_NAMES = [
     'semicolon_sam', 'async_anna', 'monorepo_mike', 'lint_error', 'deploy_dan',
 ];
 
-const VIEWER_MESSAGES = [
-    // General hype
+// Event-type-specific fallback messages for viewer chat
+const VIEWER_MESSAGES_BY_TYPE = {
+    file_update: [
+        'that edit is clean', 'refactor city 🏗️', 'ship it!', 'LGTM',
+        'the diff is *chefs kiss*', 'how many lines was that', 'modular king',
+        'love the naming', 'that function tho', 'needs more comments',
+        'the abstraction is solid', 'clean commit incoming',
+    ],
+    file_create: [
+        'new file just dropped', 'fresh module 🔥', 'the architecture is growing',
+        'another one', 'building out the project structure', 'nice scaffolding',
+    ],
+    bash: [
+        'terminal wizard', 'that command tho 🧙', 'pipe gang', 'sudo moment',
+        'one-liner king', 'just grep it', 'shell scripting arc',
+        'the flags on that command', 'thats a lot of output', 'npm install moment',
+    ],
+    error: [
+        'RIP 💀', 'F in chat', 'bugs are features', 'stack trace arc',
+        'not the red text 😭', 'error handling time', 'classic off by one',
+        'have you tried turning it off and on again', 'the debugger is calling',
+    ],
+    think: [
+        'the thinking phase 🧠', 'planning arc', 'galaxy brain moment',
+        'cooking something up', 'big brain time', 'strategizing',
+    ],
+    tool_call: [
+        'tool usage on point', 'using the right tool for the job',
+        'that tool call was fast', 'automation ftw',
+    ],
+    complete: [
+        'GG 🎉', 'LETS GOOO', 'task complete W', 'ez clap',
+        'another one done', 'built different', 'speedrun strats',
+    ],
+    spawn: [
+        'new agent just dropped', 'subagent arc', 'parallel processing moment',
+        'deploying reinforcements', 'the squad is growing',
+    ],
+};
+
+const VIEWER_MESSAGES_GENERIC = [
     'LFG 🔥', 'this is clean', 'sheeeesh', 'nice', 'W', 'Pog', 'lets goooo',
-    'so good', 'insane', '👀', '💯', 'ez clap', 'built different',
-    // Code reactions
-    'that refactor tho', 'ship it!', 'clean af', 'no bugs pls',
-    'that function name 😂', 'why not use recursion', 'types are everything',
-    'imagine not using git', 'just use a hashmap', 'O(n) gang',
-    // Code discussion
-    'that error handling is solid', 'the naming conventions here >>>', 'modular king',
-    'wait is that a race condition?', 'dependency injection ftw', 'love the separation of concerns',
-    'single responsibility principle in action', 'that import tree tho', 'clean architecture vibes',
-    'needs a try-catch around that', 'the abstraction is *chefs kiss*',
-    // Questions
-    'what lang is this?', 'can you explain that?', 'what IDE is that?',
-    'how long have you been coding?', 'whats the tech stack?',
-    // Backseat coding
-    'you missed a semicolon', 'off by one error incoming',
-    'that variable name tho', 'needs more comments', 'LGTM',
-    'should add tests for that', 'edge case alert 🚨',
-    // Emotes
-    '🚀🚀🚀', '🐛', '☕', '⌨️💨', '🧠', '✨',
+    'so good', '👀', '💯', 'ez clap', 'built different',
+    'what lang is this?', 'whats the tech stack?', 'can you explain that?',
+    '🚀🚀🚀', '☕', '⌨️💨', '🧠', '✨',
 ];
 
 function startViewerChat() {
@@ -2151,9 +2174,15 @@ function addViewerChatMessage() {
         // Refill when running low
         if (viewerChatQueue.length <= 1) fetchViewerChatBatch();
     } else {
-        // Fallback to hardcoded
+        // Fallback — pick from event-specific pool when possible
         name = VIEWER_NAMES[Math.floor(Math.random() * VIEWER_NAMES.length)];
-        msg = VIEWER_MESSAGES[Math.floor(Math.random() * VIEWER_MESSAGES.length)];
+        let pool = VIEWER_MESSAGES_GENERIC;
+        if (state.session && state.session.events && state.session.events.length) {
+            const recent = state.session.events[state.session.events.length - 1];
+            const typed = VIEWER_MESSAGES_BY_TYPE[recent.type];
+            if (typed && Math.random() < 0.7) pool = typed;
+        }
+        msg = pool[Math.floor(Math.random() * pool.length)];
         // Try to fill queue for next time
         if (!viewerChatFetching) fetchViewerChatBatch();
     }
