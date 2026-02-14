@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import llm
+from . import __version__, llm
 from .parser import parse
 from .scanner import scan_sessions
 
@@ -499,7 +499,7 @@ def main(args: list[str] | None = None) -> None:
 
     url = f"http://{host}:{port}"
     mode = " (PUBLIC MODE — secrets redacted)" if PUBLIC_MODE else ""
-    print(f"agent-replay v0.2.0 — starting at {url}{mode}")
+    print(f"agent-replay v{__version__} — starting at {url}{mode}")
 
     if not no_browser:
         # Open browser after a short delay to let server start

@@ -151,6 +151,9 @@ async function saveSettings(e) {
     });
     document.getElementById('s-provider').addEventListener('change', toggleProviderFields);
     document.getElementById('settings-form').addEventListener('submit', saveSettings);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeSettings();
+    });
 })();
 
 // ============================================================
