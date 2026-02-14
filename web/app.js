@@ -75,6 +75,8 @@ let state = {
     viewerChatTimer: null,
     monitorContent: null,  // latest code/text to show on monitor
     monitorContentType: null, // event type for styling
+    llmEnabled: true,         // LLM on/off toggle
+    replyToEventIndex: null,  // index of event being replied to
     // Master channel state
     masterEvents: [],
     masterAgents: {},
@@ -94,14 +96,45 @@ async function openSettings() {
         const cfg = await resp.json();
         document.getElementById('s-provider').value = cfg.provider || 'ollama';
         document.getElementById('s-ollama-url').value = cfg.ollama_url || '';
-        document.getElementById('s-ollama-model').value = cfg.ollama_model || '';
         document.getElementById('s-openai-key').value = '';
         document.getElementById('s-openai-key').placeholder = cfg.openai_key || 'sk-…';
         document.getElementById('s-openai-model').value = cfg.openai_model || '';
+        // Fetch available Ollama models for the dropdown
+        await populateOllamaModels(cfg.ollama_model || 'mistral-small3.2');
         toggleProviderFields();
     } catch (e) {
         document.getElementById('settings-msg').textContent = 'Failed to load settings';
         document.getElementById('settings-msg').className = 'settings-msg err';
+    }
+}
+
+async function populateOllamaModels(currentModel) {
+    const select = document.getElementById('s-ollama-model');
+    const fallback = document.getElementById('s-ollama-model-fallback');
+    try {
+        const resp = await fetch('/api/ollama-models');
+        const data = await resp.json();
+        if (data.models && data.models.length > 0) {
+            select.innerHTML = data.models.map(m =>
+                `<option value="${esc(m)}"${m === currentModel ? ' selected' : ''}>${esc(m)}</option>`
+            ).join('');
+            // If current model isn't in the list, add it
+            if (currentModel && !data.models.includes(currentModel)) {
+                select.insertAdjacentHTML('afterbegin',
+                    `<option value="${esc(currentModel)}" selected>${esc(currentModel)}</option>`);
+            }
+            select.style.display = '';
+            fallback.style.display = 'none';
+        } else {
+            // Fallback to text input
+            select.style.display = 'none';
+            fallback.style.display = '';
+            fallback.value = currentModel;
+        }
+    } catch (e) {
+        select.style.display = 'none';
+        fallback.style.display = '';
+        fallback.value = currentModel;
     }
 }
 
@@ -115,14 +148,35 @@ function toggleProviderFields() {
     document.getElementById('s-openai-fields').style.display = provider === 'openai' ? '' : 'none';
 }
 
+function syncLlmToggleUI() {
+    const btn = document.getElementById('llm-toggle-btn');
+    const input = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('chat-send-btn');
+    if (!btn) return;
+    if (state.llmEnabled) {
+        btn.classList.remove('llm-off');
+        btn.title = 'LLM is on — click to disable';
+        if (input) { input.disabled = false; input.placeholder = 'Ask about this stream...'; }
+        if (sendBtn) sendBtn.disabled = false;
+    } else {
+        btn.classList.add('llm-off');
+        btn.title = 'LLM is off — click to enable';
+        if (input) { input.disabled = true; input.placeholder = 'LLM is off — enable in settings or toggle'; }
+        if (sendBtn) sendBtn.disabled = true;
+    }
+}
+
 async function saveSettings(e) {
     e.preventDefault();
     const msg = document.getElementById('settings-msg');
     const body = { provider: document.getElementById('s-provider').value };
     if (body.provider === 'ollama') {
         body.ollama_url = document.getElementById('s-ollama-url').value;
-        body.ollama_model = document.getElementById('s-ollama-model').value;
-    } else {
+        // Use select if visible, fallback text input otherwise
+        const select = document.getElementById('s-ollama-model');
+        const fallback = document.getElementById('s-ollama-model-fallback');
+        body.ollama_model = select.style.display !== 'none' ? select.value : fallback.value;
+    } else if (body.provider === 'openai') {
         const key = document.getElementById('s-openai-key').value;
         if (key) body.openai_key = key;
         body.openai_model = document.getElementById('s-openai-model').value;
@@ -134,6 +188,14 @@ async function saveSettings(e) {
             body: JSON.stringify(body),
         });
         if (!resp.ok) throw new Error('Save failed');
+        // Sync LLM toggle state
+        state.llmEnabled = body.provider !== 'off';
+        syncLlmToggleUI();
+        if (!state.llmEnabled) {
+            stopViewerChat();
+        } else if (state.view === 'session' || state.view === 'master') {
+            startViewerChat();
+        }
         msg.textContent = 'Saved';
         msg.className = 'settings-msg ok';
         setTimeout(closeSettings, 800);
@@ -154,7 +216,167 @@ async function saveSettings(e) {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeSettings();
     });
+    // Fetch initial LLM state to set toggle
+    fetch('/api/settings').then(r => r.json()).then(cfg => {
+        state.llmEnabled = cfg.provider !== 'off';
+        syncLlmToggleUI();
+    }).catch(() => {});
 })();
+
+// ============================================================
+// LLM TOGGLE
+// ============================================================
+
+let _previousProvider = 'ollama';
+
+(function initLlmToggle() {
+    const btn = document.getElementById('llm-toggle-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+        try {
+            let newProvider;
+            if (state.llmEnabled) {
+                // Save current provider before turning off
+                const cfg = await fetch('/api/settings').then(r => r.json());
+                _previousProvider = cfg.provider || 'ollama';
+                newProvider = 'off';
+            } else {
+                newProvider = _previousProvider;
+            }
+            await fetch('/api/settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: newProvider }),
+            });
+            state.llmEnabled = !state.llmEnabled;
+            syncLlmToggleUI();
+            if (!state.llmEnabled) {
+                stopViewerChat();
+            } else if (state.view === 'session' || state.view === 'master') {
+                startViewerChat();
+            }
+        } catch (e) {
+            // silently fail
+        }
+    });
+})();
+
+// ============================================================
+// INTERACTIVE CHAT INPUT
+// ============================================================
+
+(function initChatInput() {
+    const input = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('chat-send-btn');
+    const replyPreview = document.getElementById('chat-reply-preview');
+    const replyText = document.getElementById('chat-reply-text');
+    const replyCancel = document.getElementById('chat-reply-cancel');
+
+    if (!input || !sendBtn) return;
+
+    async function sendMessage() {
+        const msg = input.value.trim();
+        if (!msg || !state.llmEnabled) return;
+
+        const log = document.getElementById('event-log');
+        input.value = '';
+        input.disabled = true;
+        sendBtn.disabled = true;
+
+        // Add user message to chat
+        const userDiv = document.createElement('div');
+        userDiv.className = 'chat-msg user-chat';
+        userDiv.innerHTML = `<span class="chat-badge">💬</span>`
+            + `<span class="chat-name" style="color:var(--purple-light)">you</span>`
+            + `<span class="chat-text">${esc(msg)}</span>`;
+        log.appendChild(userDiv);
+
+        // Add loading indicator
+        const loadDiv = document.createElement('div');
+        loadDiv.className = 'chat-msg llm-reply llm-loading';
+        loadDiv.innerHTML = `<span class="chat-badge">&#x1F9E0;</span>`
+            + `<span class="chat-name" style="color:var(--green)">assistant</span>`
+            + `<span class="chat-text">thinking...</span>`;
+        log.appendChild(loadDiv);
+        if (state.autoScroll) log.scrollTop = log.scrollHeight;
+
+        // Build request
+        const body = {
+            message: msg,
+            session_id: state.sessionFilePath || '',
+        };
+        if (state.replyToEventIndex !== null) {
+            body.reply_to_event_index = state.replyToEventIndex;
+        }
+
+        try {
+            const resp = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await resp.json();
+            loadDiv.remove();
+
+            const replyDiv = document.createElement('div');
+            replyDiv.className = 'chat-msg llm-reply';
+            if (data.reply) {
+                replyDiv.innerHTML = `<span class="chat-badge">&#x1F9E0;</span>`
+                    + `<span class="chat-name" style="color:var(--green)">assistant</span>`
+                    + `<span class="chat-text">${esc(data.reply)}</span>`;
+            } else {
+                replyDiv.innerHTML = `<span class="chat-badge">&#x1F9E0;</span>`
+                    + `<span class="chat-name" style="color:var(--green)">assistant</span>`
+                    + `<span class="chat-text" style="color:var(--text-muted)">${esc(data.error || 'No response')}</span>`;
+            }
+            log.appendChild(replyDiv);
+        } catch (e) {
+            loadDiv.remove();
+            const errDiv = document.createElement('div');
+            errDiv.className = 'chat-msg llm-reply';
+            errDiv.innerHTML = `<span class="chat-badge">&#x1F9E0;</span>`
+                + `<span class="chat-name" style="color:var(--green)">assistant</span>`
+                + `<span class="chat-text" style="color:var(--red-soft)">Failed to reach LLM</span>`;
+            log.appendChild(errDiv);
+        }
+
+        // Clear reply-to state
+        state.replyToEventIndex = null;
+        if (replyPreview) replyPreview.style.display = 'none';
+
+        input.disabled = false;
+        sendBtn.disabled = false;
+        input.focus();
+        if (state.autoScroll) log.scrollTop = log.scrollHeight;
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    if (replyCancel) {
+        replyCancel.addEventListener('click', () => {
+            state.replyToEventIndex = null;
+            replyPreview.style.display = 'none';
+        });
+    }
+})();
+
+function setReplyToEvent(index, summary) {
+    state.replyToEventIndex = index;
+    const preview = document.getElementById('chat-reply-preview');
+    const text = document.getElementById('chat-reply-text');
+    if (preview && text) {
+        text.textContent = summary || `Event #${index}`;
+        preview.style.display = 'flex';
+    }
+    const input = document.getElementById('chat-input');
+    if (input && !input.disabled) input.focus();
+}
 
 // ============================================================
 // PERSISTENT TIPS (localStorage)
@@ -1357,6 +1579,7 @@ function handleRoute() {
     state.reaction = null;
     state.typingSpeed = 1.0;
     state.chatFullscreen = false;
+    state.replyToEventIndex = null;
     const hash = window.location.hash || '#/';
     if (hash === '#/master') {
         showMasterChannel();
@@ -1599,7 +1822,8 @@ async function showSessionView(filePath) {
         const canvas = document.getElementById('webcam-canvas');
         const seed = hashCode(filePath) % PALETTES.length;
         startPixelAnimation(canvas, seed, true);
-        startViewerChat();
+        syncLlmToggleUI();
+        if (state.llmEnabled) startViewerChat();
     } catch (e) {
         document.getElementById('event-log').innerHTML = `<div style="padding:20px;color:var(--text-muted)">Failed to connect to stream</div>`;
     }
@@ -1720,11 +1944,13 @@ const VIEWER_MESSAGES = [
 
 function startViewerChat() {
     stopViewerChat();
+    if (!state.llmEnabled) return;
     // Pre-fetch LLM messages so they're ready when needed
     fetchViewerChatBatch();
     function scheduleNext() {
         const delay = 4000 + Math.random() * 12000; // 4-16s between messages
         state.viewerChatTimer = setTimeout(() => {
+            if (!state.llmEnabled) { stopViewerChat(); return; }
             addViewerChatMessage();
             scheduleNext();
         }, delay);
@@ -1909,7 +2135,7 @@ function getProjectColor(project) {
     return _projectColorMap[project];
 }
 
-function appendChatMessage(log, evt, s, isMaster) {
+function appendChatMessage(log, evt, s, isMaster, evtIndex) {
     if (evt.file_path) {
         const sp = evt.short_path || evt.file_path;
         if (evt.type === 'file_create') state.inventory[sp] = 'C';
@@ -1948,7 +2174,23 @@ function appendChatMessage(log, evt, s, isMaster) {
 
     const expanded = document.createElement('div');
     expanded.className = 'chat-expanded';
-    expanded.textContent = evt.content || '(no content)';
+
+    const expandedText = document.createElement('div');
+    expandedText.textContent = evt.content || '(no content)';
+    expanded.appendChild(expandedText);
+
+    // "Ask about this" button
+    if (evt.content && evtIndex != null) {
+        const askBtn = document.createElement('button');
+        askBtn.className = 'ask-about-btn';
+        askBtn.textContent = 'Ask about this';
+        const capturedIndex = evtIndex;
+        askBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setReplyToEvent(capturedIndex, chatText.substring(0, 80));
+        });
+        expanded.appendChild(askBtn);
+    }
 
     div.addEventListener('click', () => {
         expanded.style.display = expanded.style.display === 'block' ? 'none' : 'block';
@@ -1974,8 +2216,8 @@ function renderChatLog(s) {
 
     let lastEvent = null;
 
-    s.events.forEach((evt) => {
-        appendChatMessage(log, evt, s, false);
+    s.events.forEach((evt, idx) => {
+        appendChatMessage(log, evt, s, false, idx);
         if (isEventVisible(evt.type)) lastEvent = evt;
     });
 
@@ -2125,7 +2367,8 @@ function connectSessionWS(filePath) {
             state.autoScroll = atBottom;
 
             // Append only new events instead of rebuilding
-            msg.events.forEach(evt => appendChatMessage(log, evt, state.session, false));
+            const baseIdx = state.session.events.length - msg.events.length;
+            msg.events.forEach((evt, i) => appendChatMessage(log, evt, state.session, false, baseIdx + i));
             updateChatCounters(state.session);
             renderMods(state.session);
             renderDonationGoal();
@@ -2205,7 +2448,8 @@ async function showMasterChannel() {
 
         const canvas = document.getElementById('webcam-canvas');
         startControlRoomAnimation(canvas);
-        startViewerChat();
+        syncLlmToggleUI();
+        if (state.llmEnabled) startViewerChat();
     } catch (e) {
         document.getElementById('event-log').innerHTML = '<div style="padding:20px;color:var(--text-muted)">Failed to load master channel</div>';
     }
@@ -2231,8 +2475,8 @@ function renderMasterChatLog(s) {
     log.innerHTML = '';
     state.inventory = {};
 
-    s.events.forEach((evt) => {
-        appendChatMessage(log, evt, s, true);
+    s.events.forEach((evt, idx) => {
+        appendChatMessage(log, evt, s, true, idx);
     });
 
     if (wasAtBottom) log.scrollTop = log.scrollHeight;
@@ -2267,7 +2511,8 @@ function connectMasterWS() {
             const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
             state.autoScroll = atBottom;
 
-            msg.events.forEach(evt => appendChatMessage(log, evt, state.session, true));
+            const masterBaseIdx = state.session.events.length - msg.events.length;
+            msg.events.forEach((evt, i) => appendChatMessage(log, evt, state.session, true, masterBaseIdx + i));
             updateChatCounters(state.session);
             renderMods(state.session);
             renderDonationGoal();

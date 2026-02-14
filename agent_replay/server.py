@@ -10,6 +10,7 @@ import sys
 import webbrowser
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -104,6 +105,70 @@ def _redact_summary(s: dict) -> dict:
         s['file_path'] = hashed
     return s
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+
+
+@app.get("/api/ollama-models")
+async def get_ollama_models():
+    """Return list of locally available Ollama model names."""
+    try:
+        url = f"{llm.OLLAMA_URL}/api/tags"
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+        models = [m["name"] for m in data.get("models", [])]
+        return {"models": models}
+    except Exception:
+        return {"models": [], "error": "Could not reach Ollama"}
+
+
+@app.post("/api/chat")
+async def post_chat(request: Request):
+    """Interactive chat — user asks a question about agent activity."""
+    if llm.LLM_PROVIDER == "off":
+        return {"error": "LLM is disabled"}
+
+    body = await request.json()
+    user_message = body.get("message", "").strip()
+    session_id = body.get("session_id", "")
+    reply_to_index = body.get("reply_to_event_index")
+
+    if not user_message:
+        return {"error": "Empty message"}
+
+    # Load session for context
+    event_content = ""
+    event_type = ""
+    context = ""
+    if session_id:
+        try:
+            real_path = _path_map.get(session_id, session_id)
+            file_path = Path(real_path)
+            if not file_path.exists():
+                summaries = scan_sessions(DATA_DIR)
+                for s in summaries:
+                    if s.id == session_id or s.file_path == session_id:
+                        file_path = Path(s.file_path)
+                        break
+            if file_path.exists():
+                session = parse(file_path)
+                session_data = _redact_session(session.to_dict())
+                context = _build_context(session_data, n=8)
+                # Extract specific event if replying to one
+                events = session_data.get("events", [])
+                if reply_to_index is not None and 0 <= reply_to_index < len(events):
+                    target = events[reply_to_index]
+                    event_content = target.get("content", "")
+                    event_type = target.get("type", "")
+        except Exception:
+            pass
+
+    reply = await llm.generate_interactive_reply(
+        user_message, event_content, event_type, context
+    )
+    if reply:
+        return {"reply": reply}
+    return {"error": "Failed to generate reply"}
 
 
 @app.get("/", response_class=HTMLResponse)

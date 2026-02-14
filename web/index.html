@@ -36,6 +36,7 @@
                 <button id="back-btn" class="back-btn" title="Back to browse">◂ Browse</button>
                 <span class="logo"><span class="logo-icon">▶</span> AgentsTV</span>
                 <span class="top-spacer"></span>
+                <button id="llm-toggle-btn" class="llm-toggle-btn" title="Toggle LLM on/off">&#x1F9E0;</button>
                 <button class="settings-btn" onclick="openSettings()" title="LLM Settings">⚙</button>
                 <span id="session-status" class="conn-status"></span>
             </header>
@@ -93,6 +94,14 @@
                         <div id="event-log" class="chat-log"></div>
                         <button id="scroll-bottom-btn" class="scroll-bottom-btn" style="display:none" title="Scroll to bottom">↓ New messages</button>
                     </div>
+                    <div id="chat-reply-preview" class="chat-reply-preview" style="display:none">
+                        <span id="chat-reply-text" class="chat-reply-text"></span>
+                        <button id="chat-reply-cancel" class="chat-reply-cancel">&times;</button>
+                    </div>
+                    <div class="chat-input-bar">
+                        <input id="chat-input" class="chat-input" type="text" placeholder="Ask about this stream..." autocomplete="off">
+                        <button id="chat-send-btn" class="chat-send-btn" title="Send">&#x25B6;</button>
+                    </div>
                     <div class="chat-actions">
                         <div class="chat-filters">
                             <button id="filter-toggle-btn" class="filter-toggle-btn">⚙ Filters</button>
@@ -129,13 +138,17 @@
                     <select id="s-provider" class="settings-input">
                         <option value="ollama">Ollama</option>
                         <option value="openai">OpenAI</option>
+                        <option value="off">Off (disabled)</option>
                     </select>
 
                     <div id="s-ollama-fields">
                         <label class="settings-label">Ollama URL</label>
                         <input id="s-ollama-url" class="settings-input" type="text" placeholder="http://localhost:11434">
                         <label class="settings-label">Ollama Model</label>
-                        <input id="s-ollama-model" class="settings-input" type="text" placeholder="mistral-small3.2">
+                        <select id="s-ollama-model" class="settings-input">
+                            <option value="mistral-small3.2">mistral-small3.2</option>
+                        </select>
+                        <input id="s-ollama-model-fallback" class="settings-input" type="text" placeholder="mistral-small3.2" style="display:none">
                     </div>
 
                     <div id="s-openai-fields" style="display:none">

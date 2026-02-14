@@ -17,6 +17,13 @@ SYSTEM_PROMPT = (
     "Return a JSON array of strings, nothing else."
 )
 
+SYSTEM_PROMPT_EXPLAIN = (
+    "You are a concise coding assistant explaining what an AI agent is doing. "
+    "Answer the user's question about the agent's actions in 2-4 sentences. "
+    "Be specific and reference the actual code, tool, or file when relevant. "
+    "Keep it conversational but informative."
+)
+
 # Provider config — set via env vars or CLI flags
 LLM_PROVIDER: str = os.environ.get("AGENTSTV_LLM", "ollama")
 OLLAMA_URL: str = os.environ.get("AGENTSTV_OLLAMA_URL", "http://localhost:11434")
@@ -65,6 +72,9 @@ async def generate_viewer_messages(context: str, count: int = 5) -> list[str]:
 
     Returns a list of strings, or an empty list on failure.
     """
+    if LLM_PROVIDER == "off":
+        return []
+
     user_prompt = (
         f"Here are the last few things the AI coder did:\n{context}\n\n"
         f"Generate {count} different short viewer chat messages reacting to this."
@@ -72,49 +82,98 @@ async def generate_viewer_messages(context: str, count: int = 5) -> list[str]:
 
     try:
         if LLM_PROVIDER == "openai":
-            return await _call_openai(user_prompt, count)
+            return await _call_openai(user_prompt, SYSTEM_PROMPT, count=count)
         else:
-            return await _call_ollama(user_prompt, count)
+            return await _call_ollama(user_prompt, SYSTEM_PROMPT, count=count)
     except Exception:
         log.debug("LLM call failed", exc_info=True)
         return []
 
 
-async def _call_ollama(user_prompt: str, count: int) -> list[str]:
+async def generate_interactive_reply(
+    user_message: str,
+    event_content: str,
+    event_type: str,
+    context: str,
+) -> str:
+    """Generate a reply to a user question about agent activity.
+
+    Returns a string reply, or empty string on failure / LLM off.
+    """
+    if LLM_PROVIDER == "off":
+        return ""
+
+    user_prompt = (
+        f"The user is watching an AI coding agent and asked:\n\"{user_message}\"\n\n"
+    )
+    if event_content:
+        user_prompt += f"They're asking about this specific event ({event_type}):\n{event_content[:2000]}\n\n"
+    if context:
+        user_prompt += f"Recent agent activity for context:\n{context}\n"
+
+    try:
+        if LLM_PROVIDER == "openai":
+            return await _call_openai(user_prompt, SYSTEM_PROMPT_EXPLAIN, raw=True)
+        else:
+            return await _call_ollama(user_prompt, SYSTEM_PROMPT_EXPLAIN, raw=True)
+    except Exception:
+        log.debug("Interactive LLM call failed", exc_info=True)
+        return ""
+
+
+async def _call_ollama(
+    user_prompt: str,
+    system_prompt: str = SYSTEM_PROMPT,
+    *,
+    count: int = 5,
+    raw: bool = False,
+) -> list[str] | str:
     url = f"{OLLAMA_URL}/api/chat"
     payload = {
         "model": OLLAMA_MODEL,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        "format": "json",
         "stream": False,
     }
+    if not raw:
+        payload["format"] = "json"
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(url, json=payload)
         resp.raise_for_status()
         body = resp.json()
-    return _parse_response(body["message"]["content"], count)
+    text = body["message"]["content"]
+    if raw:
+        return text.strip()
+    return _parse_response(text, count)
 
 
-async def _call_openai(user_prompt: str, count: int) -> list[str]:
+async def _call_openai(
+    user_prompt: str,
+    system_prompt: str = SYSTEM_PROMPT,
+    *,
+    count: int = 5,
+    raw: bool = False,
+) -> list[str] | str:
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {OPENAI_KEY}"}
     payload = {
         "model": OPENAI_MODEL,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 1.0,
-        "max_tokens": 300,
+        "max_tokens": 300 if not raw else 500,
     }
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(url, json=payload, headers=headers)
         resp.raise_for_status()
         body = resp.json()
     text = body["choices"][0]["message"]["content"]
+    if raw:
+        return text.strip()
     return _parse_response(text, count)
 
 
