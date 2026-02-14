@@ -174,7 +174,7 @@ function drawPixelScene(canvas, seed, frame, isLarge) {
 
     // Window with moonlight for some setups
     if (seed % 3 === 0) {
-        drawWindow(ctx, w, h, px, frame);
+        drawWindow(ctx, w, h, px, frame, seed);
     }
 
     // Floor
@@ -185,12 +185,13 @@ function drawPixelScene(canvas, seed, frame, isLarge) {
         ctx.fillRect(x, h * 0.72, px * 4, h * 0.28);
     }
 
-    // Desk
+    // Desk (shakes 1px on error)
     const deskY = h * 0.55;
     const deskH = px * 4;
+    const deskShake = (rxType === 'error' && rxProgress < 0.3) ? Math.sin(frame * 2) * 1 : 0;
     const deskColor = seed % 2 === 0 ? '#3d2b1f' : '#2c3e50';
     ctx.fillStyle = deskColor;
-    ctx.fillRect(w * 0.12, deskY, w * 0.76, deskH);
+    ctx.fillRect(w * 0.12 + deskShake, deskY, w * 0.76, deskH);
     ctx.fillStyle = darken(deskColor, 30);
     ctx.fillRect(w * 0.12, deskY + deskH, w * 0.76, px);
 
@@ -214,12 +215,32 @@ function drawPixelScene(canvas, seed, frame, isLarge) {
     // Character
     drawCharacter(ctx, w, h, px, palette, charX, charY, deskY, frame, rxType, rxProgress, typingMult);
 
-    // Keyboard
+    // Keyboard with dynamic key lighting
     ctx.fillStyle = '#3a3a44';
     ctx.fillRect(charX - px, deskY - px * 2, px * 12, px * 2);
-    ctx.fillStyle = '#4a4a55';
     for (let k = 0; k < 5; k++) {
+        let keyColor;
+        if (rxType === 'error') {
+            keyColor = '#ff3333'; // flash red on error
+        } else if (rxType === 'complete') {
+            // Rainbow sweep
+            const hue = ((k * 60 + frame * 8) % 360);
+            keyColor = `hsl(${hue}, 80%, 60%)`;
+        } else if (rxType === 'think') {
+            keyColor = '#2a2a33'; // dark during think (hands off)
+        } else {
+            // Random key lighting during typing
+            const keyActive = ((seed * 3 + k * 7 + Math.floor(frame * typingMult * 0.3)) % 5 === 0);
+            keyColor = keyActive ? '#7a7a88' : '#4a4a55';
+        }
+        ctx.fillStyle = keyColor;
         ctx.fillRect(charX + k * px * 2, deskY - px * 2, px, px);
+    }
+    // Keyboard sparks during fast typing
+    if (typingMult > 2 && frame % 3 === 0) {
+        const sparkX = charX + ((frame * 7 + seed) % 10) * px;
+        ctx.fillStyle = 'rgba(255,200,50,0.5)';
+        ctx.fillRect(sparkX, deskY - px * 3, px * 0.5, px * 0.5);
     }
 
     // Decorations
@@ -227,25 +248,99 @@ function drawPixelScene(canvas, seed, frame, isLarge) {
         drawDecoration(ctx, w, h, px, d, seed, frame, deskY);
     }
 
+    // Monitor glow on wall
+    drawMonitorGlow(ctx, w, h, px, setup, palette, frame);
+
     // Celebration particles on complete
     if (rxType === 'complete') {
         drawCelebration(ctx, w, h, px, frame, rx.startFrame);
+        // Fist pump checkmark on monitor
+        if (rxProgress < 0.6) {
+            ctx.fillStyle = '#00ff41';
+            const cmx = w * 0.48, cmy = h * 0.25;
+            ctx.fillRect(cmx, cmy + px * 2, px, px);
+            ctx.fillRect(cmx + px, cmy + px * 3, px, px);
+            ctx.fillRect(cmx + px * 2, cmy + px * 2, px, px);
+            ctx.fillRect(cmx + px * 3, cmy + px, px, px);
+            ctx.fillRect(cmx + px * 4, cmy, px, px);
+        }
+        // Gold sparkles
+        for (let i = 0; i < 8; i++) {
+            const sx = charX + px * 5 + Math.sin(frame * 0.3 + i * 0.8) * px * 8;
+            const sy = charY - px * 14 - Math.abs(Math.sin(frame * 0.2 + i)) * px * 6;
+            ctx.fillStyle = `rgba(255, 215, 0, ${0.5 + Math.sin(frame * 0.5 + i) * 0.3})`;
+            ctx.fillRect(sx, sy, px * 0.5, px * 0.5);
+        }
     }
 
-    // Spawn flash — purple glow
-    if (rxType === 'spawn' && rxProgress < 0.4) {
-        const alpha = Math.sin(rxProgress * Math.PI / 0.4) * 0.15;
-        ctx.fillStyle = `rgba(145, 70, 255, ${alpha})`;
-        ctx.fillRect(0, 0, w, h);
+    // Spawn — purple rings radiate outward
+    if (rxType === 'spawn') {
+        for (let ring = 0; ring < 3; ring++) {
+            const ringProgress = rxProgress - ring * 0.15;
+            if (ringProgress < 0 || ringProgress > 0.7) continue;
+            const radius = ringProgress * px * 20;
+            const alpha = 0.3 * (1 - ringProgress / 0.7);
+            ctx.strokeStyle = `rgba(145, 70, 255, ${alpha})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(charX + px * 5, charY - px * 6, radius, 0, Math.PI * 2);
+            ctx.stroke();
+        }
     }
 
-    // Ambient dust
-    for (let i = 0; i < 5; i++) {
-        const pSeed = (seed * 13 + i * 7 + frame) % 1000;
-        const dx = (pSeed % w);
-        const dy = ((pSeed * 3 + frame * 0.2) % (h * 0.7));
-        ctx.fillStyle = `rgba(255,255,255,${0.04 + (pSeed % 10) * 0.008})`;
-        ctx.fillRect(dx, dy, 1, 1);
+    // Error — red ! above head, desk shake via slight render offset
+    if (rxType === 'error' && rxProgress < 0.5) {
+        ctx.fillStyle = '#ff4444';
+        const bangX = charX + px * 5, bangY = charY - px * 16;
+        ctx.fillRect(bangX, bangY, px, px * 3);
+        ctx.fillRect(bangX, bangY + px * 4, px, px);
+    }
+
+    // Think — thought bubble dots
+    if (rxType === 'think') {
+        const dotPhase = Math.floor(frame / 12) % 4;
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        for (let i = 0; i < Math.min(dotPhase, 3); i++) {
+            ctx.fillRect(charX + px * 8 + i * px * 2, charY - px * 14 - i * px, px, px);
+        }
+    }
+
+    // User — wave, ? speech bubble
+    if (rxType === 'user' && rxProgress < 0.6) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(charX + px * 10, charY - px * 12, px * 2, px * 2);
+        ctx.fillRect(charX + px * 10.5, charY - px * 11, px, px);
+    }
+
+    // Bash — lightning bolt above keyboard
+    if (rxType === 'bash' && rxProgress < 0.4) {
+        ctx.fillStyle = '#ffff00';
+        const bx = charX + px * 5, by = deskY - px * 5;
+        ctx.fillRect(bx + px, by, px, px);
+        ctx.fillRect(bx, by + px, px * 2, px);
+        ctx.fillRect(bx + px, by + px * 2, px, px);
+    }
+
+    // Ambient dust motes — 12 with varied sizes
+    for (let i = 0; i < 12; i++) {
+        const pSeed = (seed * 13 + i * 7) % 1000;
+        const speed = 0.1 + (pSeed % 5) * 0.05;
+        const dx = (pSeed + frame * speed * 0.3) % w;
+        const dy = ((pSeed * 3 + frame * speed) % (h * 0.7));
+        const size = 1 + (pSeed % 2);
+        ctx.fillStyle = `rgba(255,255,255,${0.03 + (pSeed % 10) * 0.006})`;
+        ctx.fillRect(dx, dy, size, size);
+    }
+
+    // Monitor light particles drifting from screen
+    if (isLarge) {
+        for (let i = 0; i < 4; i++) {
+            const mp = (seed * 3 + i * 11 + frame) % 500;
+            const mx = w * 0.35 + (mp % Math.floor(w * 0.3));
+            const my = h * 0.3 + (mp * 0.4) % (h * 0.2);
+            ctx.fillStyle = 'rgba(0, 255, 65, 0.04)';
+            ctx.fillRect(mx, my, 1, 1);
+        }
     }
 }
 
@@ -294,15 +389,16 @@ function drawMonitor(ctx, monX, monY, monW, monH, px, palette, seed, frame, scro
         ctx.fillRect(monX, y, monW, 1);
     }
 
-    // Code on screen
+    // Screen content — dynamic modes unless reaction override
     if (rxType === 'error' && rxProgress < 0.5) {
-        // Error text on screen
         drawErrorScreen(ctx, monX, monY, monW, monH, px, rxProgress);
+        // Skull icon
+        ctx.fillStyle = '#ff4444';
+        ctx.fillRect(monX + monW / 2 - px, monY + monH - px * 4, px * 2, px * 2);
     } else if (rxType === 'think') {
-        // Thinking — show ellipsis/cursor blink
         drawThinkingScreen(ctx, monX, monY, monW, monH, px, frame);
     } else {
-        drawCode(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed);
+        drawMonitorContent(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed);
     }
 
     // CRT flicker
@@ -388,24 +484,36 @@ function drawThinkingScreen(ctx, monX, monY, monW, monH, px, frame) {
 }
 
 function drawCharacter(ctx, w, h, px, palette, charX, charY, deskY, frame, rxType, rxProgress, typingMult) {
+    // Breathing — 1px body Y oscillation
+    const breathY = Math.sin(frame * 0.04) * 1;
+    const seed = hashCode(palette.shirt) % 1000;
+
+    // Idle action when no reaction active
+    const idle = (!rxType) ? getIdleAction(seed, frame) : null;
+
     // Body
     ctx.fillStyle = palette.shirt;
-    ctx.fillRect(charX + px * 2, charY - px * 6, px * 6, px * 5);
+    let bodyOffX = 0;
+    if (idle && idle.action === 'lean') bodyOffX = px * idle.phase;
+    ctx.fillRect(charX + px * 2 + bodyOffX, charY - px * 6 + breathY, px * 6, px * 5);
 
     // Head — slight bob when thinking, recoil on error
-    let headOffY = 0;
-    let headOffX = 0;
+    let headOffY = breathY;
+    let headOffX = bodyOffX;
     if (rxType === 'think') {
-        headOffX = Math.sin(frame * 0.08) * px * 0.5;
-        headOffY = Math.sin(frame * 0.15) * px * 0.3;
+        headOffX += Math.sin(frame * 0.08) * px * 0.5;
+        headOffY += Math.sin(frame * 0.15) * px * 0.3;
     } else if (rxType === 'error') {
-        headOffY = rxProgress < 0.2 ? -px * 2 * (rxProgress / 0.2) : -px * 2 * (1 - (rxProgress - 0.2) / 0.8);
-        headOffX = Math.sin(frame * 1.5) * px * (rxProgress < 0.3 ? 1 : 0);
+        headOffY += rxProgress < 0.2 ? -px * 2 * (rxProgress / 0.2) : -px * 2 * (1 - (rxProgress - 0.2) / 0.8);
+        headOffX += Math.sin(frame * 1.5) * px * (rxProgress < 0.3 ? 1 : 0);
     } else if (rxType === 'complete') {
-        headOffY = -Math.abs(Math.sin(rxProgress * Math.PI * 3)) * px * 2;
+        headOffY += -Math.abs(Math.sin(rxProgress * Math.PI * 3)) * px * 2;
     } else if (rxType === 'user') {
-        // Turn head slightly toward "camera"
-        headOffX = -px * 2 * Math.sin(rxProgress * Math.PI);
+        headOffX += -px * 2 * Math.sin(rxProgress * Math.PI);
+    } else if (idle) {
+        if (idle.action === 'look') headOffX += Math.sin(idle.phase * Math.PI) * px * 3;
+        if (idle.action === 'stretch') headOffY += -idle.phase * px * 2;
+        if (idle.action === 'scratch') headOffY += Math.sin(idle.phase * Math.PI * 2) * px * 0.5;
     }
 
     ctx.fillStyle = palette.skin;
@@ -416,62 +524,111 @@ function drawCharacter(ctx, w, h, px, palette, charX, charY, deskY, frame, rxTyp
     ctx.fillRect(charX + px * 3 + headOffX, charY - px * 12 + headOffY, px * 4, px * 2);
     ctx.fillRect(charX + px * 2 + headOffX, charY - px * 11 + headOffY, px, px * 2);
 
-    // Eyes
-    ctx.fillStyle = '#ffffff';
+    // Eyes — with blinking (3 frames every ~100 frames, seed-deterministic)
+    const blinkCycle = (frame + seed * 7) % 100;
+    const isBlinking = blinkCycle >= 97; // 3 frames of blink
+
     const eyeBaseX = charX + px * 4 + headOffX;
     const eyeBaseY = charY - px * 9 + headOffY;
-    ctx.fillRect(eyeBaseX, eyeBaseY, px, px);
-    ctx.fillRect(eyeBaseX + px * 2, eyeBaseY, px, px);
 
-    // Pupils — look at monitor normally, look at camera on user event
-    ctx.fillStyle = '#111111';
-    let pupilOff = 0;
-    if (rxType === 'user') {
-        pupilOff = -1; // look left toward camera
+    if (isBlinking) {
+        // Closed eyes — horizontal line
+        ctx.fillStyle = '#111111';
+        ctx.fillRect(eyeBaseX, eyeBaseY + px * 0.3, px, px * 0.4);
+        ctx.fillRect(eyeBaseX + px * 2, eyeBaseY + px * 0.3, px, px * 0.4);
+    } else {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(eyeBaseX, eyeBaseY, px, px);
+        ctx.fillRect(eyeBaseX + px * 2, eyeBaseY, px, px);
+
+        // Pupils — look at monitor normally, look at camera on user event
+        ctx.fillStyle = '#111111';
+        let pupilOff = 0;
+        if (rxType === 'user') pupilOff = -1;
+        else if (idle && idle.action === 'look') pupilOff = Math.sin(idle.phase * Math.PI) > 0.5 ? -1 : 0;
+        ctx.fillRect(eyeBaseX + pupilOff, eyeBaseY, Math.ceil(px * 0.5), Math.ceil(px * 0.5));
+        ctx.fillRect(eyeBaseX + px * 2 + pupilOff, eyeBaseY, Math.ceil(px * 0.5), Math.ceil(px * 0.5));
     }
-    ctx.fillRect(eyeBaseX + pupilOff, eyeBaseY, Math.ceil(px * 0.5), Math.ceil(px * 0.5));
-    ctx.fillRect(eyeBaseX + px * 2 + pupilOff, eyeBaseY, Math.ceil(px * 0.5), Math.ceil(px * 0.5));
 
     // Mouth — happy on complete, open on error
     if (rxType === 'complete') {
-        ctx.fillStyle = palette.skin;
-        ctx.fillRect(eyeBaseX, eyeBaseY + px * 2, px * 3, px * 0.5); // smile
         ctx.fillStyle = '#cc6666';
         ctx.fillRect(eyeBaseX + px * 0.5, eyeBaseY + px * 2, px * 2, px * 0.5);
     } else if (rxType === 'error' && rxProgress < 0.4) {
         ctx.fillStyle = '#111111';
         ctx.fillRect(eyeBaseX + px * 0.5, eyeBaseY + px * 2.5, px * 2, px);
+    } else if (idle && idle.action === 'sip' && idle.phase > 0.3 && idle.phase < 0.7) {
+        // Sipping — small open mouth
+        ctx.fillStyle = '#111111';
+        ctx.fillRect(eyeBaseX + px, eyeBaseY + px * 2.2, px, px * 0.5);
     }
 
-    // Arms — typing speed varies
+    // Arms — typing speed varies, idle overrides
     const armSpeed = 0.3 * typingMult;
     const armPhase = Math.sin(frame * armSpeed);
 
-    // During error: hands up in frustration
     if (rxType === 'error' && rxProgress < 0.5) {
         ctx.fillStyle = palette.skin;
         ctx.fillRect(charX - px, charY - px * 8, px * 2, px * 2);
         ctx.fillRect(charX + px * 9, charY - px * 8, px * 2, px * 2);
     } else if (rxType === 'complete' && rxProgress < 0.6) {
-        // Arms up celebration
+        // Fist pump
         const armUp = Math.sin(rxProgress * Math.PI * 4) * px * 2;
         ctx.fillStyle = palette.skin;
         ctx.fillRect(charX - px, charY - px * 7 - Math.abs(armUp), px * 2, px * 2);
         ctx.fillRect(charX + px * 9, charY - px * 7 - Math.abs(armUp), px * 2, px * 2);
     } else if (rxType === 'think') {
-        // One hand on chin
         ctx.fillStyle = palette.skin;
         ctx.fillRect(charX + px * 2, charY - px * 8, px * 2, px * 3);
         ctx.fillRect(charX + px * 8, charY - px * 4, px * 2, px * 2);
+    } else if (idle && idle.action === 'sip') {
+        // Sip: one hand reaches to mouth area
+        ctx.fillStyle = palette.skin;
+        const sipLift = Math.sin(idle.phase * Math.PI);
+        ctx.fillRect(charX + px * 7, charY - px * 8 - sipLift * px * 2, px * 2, px * 2);
+        ctx.fillRect(charX, charY - px * 4, px * 2, px * 2);
+    } else if (idle && idle.action === 'stretch') {
+        // Arms up, lean back
+        ctx.fillStyle = palette.skin;
+        const stretchUp = idle.phase * px * 4;
+        ctx.fillRect(charX - px, charY - px * 7 - stretchUp, px * 2, px * 2);
+        ctx.fillRect(charX + px * 9, charY - px * 7 - stretchUp, px * 2, px * 2);
+    } else if (idle && idle.action === 'scratch') {
+        // Hand to head
+        ctx.fillStyle = palette.skin;
+        ctx.fillRect(charX + px * 7 + headOffX, charY - px * 11 + headOffY, px * 2, px * 2);
+        ctx.fillRect(charX, charY - px * 4, px * 2, px * 2);
     } else {
         // Normal typing
-        const lArmY = charY - px * 4 + (armPhase > 0 ? -px : 0);
-        const rArmY = charY - px * 4 + (armPhase > 0 ? 0 : -px);
+        const lArmY = charY - px * 4 + breathY + (armPhase > 0 ? -px : 0);
+        const rArmY = charY - px * 4 + breathY + (armPhase > 0 ? 0 : -px);
         ctx.fillStyle = palette.skin;
         ctx.fillRect(charX, lArmY, px * 2, px * 2);
         ctx.fillRect(charX - px, lArmY + px, px, px);
         ctx.fillRect(charX + px * 8, rArmY, px * 2, px * 2);
         ctx.fillRect(charX + px * 10, rArmY + px, px, px);
+    }
+}
+
+// Monitor glow — colored rect behind monitor onto wall
+function drawMonitorGlow(ctx, w, h, px, setup, palette, frame) {
+    const glowAlpha = 0.04 + Math.sin(frame * 0.02) * 0.015;
+    const monColor = palette.monitor;
+    // Extract RGB from monitor color for glow
+    const r = parseInt(monColor.slice(1, 3), 16);
+    const g = parseInt(monColor.slice(3, 5), 16);
+    const b = parseInt(monColor.slice(5, 7), 16);
+    const glowR = Math.min(255, r + 80);
+    const glowG = Math.min(255, g + 80);
+    const glowB = Math.min(255, b + 80);
+
+    if (setup === 'dual') {
+        ctx.fillStyle = `rgba(${glowR},${glowG},${glowB},${glowAlpha})`;
+        ctx.fillRect(w * 0.18, h * 0.05, w * 0.3, h * 0.45);
+        ctx.fillRect(w * 0.48, h * 0.05, w * 0.3, h * 0.45);
+    } else {
+        ctx.fillStyle = `rgba(${glowR},${glowG},${glowB},${glowAlpha})`;
+        ctx.fillRect(w * 0.25, h * 0.05, w * 0.5, h * 0.45);
     }
 }
 
@@ -483,14 +640,17 @@ function drawDecoration(ctx, w, h, px, type, seed, frame, deskY) {
             ctx.fillRect(mx, deskY - px * 4, px * 3, px * 3);
             ctx.fillStyle = '#8b4513';
             ctx.fillRect(mx + px * 0.5, deskY - px * 3.5, px * 2, px * 2);
-            // Handle
             ctx.fillStyle = '#e0e0e0';
             ctx.fillRect(mx + px * 3, deskY - px * 3, px, px * 2);
-            // Steam
-            if (frame % 8 < 4) {
-                ctx.fillStyle = 'rgba(200,200,200,0.3)';
-                ctx.fillRect(mx + px, deskY - px * 6, px, px);
-                ctx.fillRect(mx + px * 0.5, deskY - px * 7, px, px);
+            // Continuous rising/fading steam particles (3-4)
+            for (let s = 0; s < 4; s++) {
+                const steamSeed = s * 37 + seed;
+                const steamCycle = ((frame * 0.8 + steamSeed * 5) % 40) / 40;
+                const steamX = mx + px * (0.5 + s * 0.6) + Math.sin(frame * 0.1 + s) * px * 0.5;
+                const steamY = deskY - px * 5 - steamCycle * px * 5;
+                const steamAlpha = 0.3 * (1 - steamCycle);
+                ctx.fillStyle = `rgba(200,200,200,${steamAlpha})`;
+                ctx.fillRect(steamX, steamY, px * 0.5, px * 0.5);
             }
             break;
         }
@@ -517,48 +677,64 @@ function drawDecoration(ctx, w, h, px, type, seed, frame, deskY) {
         }
         case 'plant': {
             const px2 = w * 0.2;
-            // Pot
             ctx.fillStyle = '#8b4513';
             ctx.fillRect(px2, deskY - px * 4, px * 4, px * 3);
             ctx.fillStyle = '#654321';
             ctx.fillRect(px2 - px * 0.5, deskY - px * 4, px * 5, px);
-            // Leaves
+            // Leaves with continuous sine sway
+            const sway = Math.sin(frame * 0.03) * px;
             ctx.fillStyle = '#228b22';
-            ctx.fillRect(px2 + px, deskY - px * 7, px * 2, px * 3);
-            ctx.fillRect(px2 - px, deskY - px * 6, px * 2, px * 2);
-            ctx.fillRect(px2 + px * 3, deskY - px * 6, px * 2, px * 2);
-            // Leaf sway
-            if (frame % 60 < 30) {
-                ctx.fillRect(px2 + px * 4, deskY - px * 7, px, px);
-            } else {
-                ctx.fillRect(px2 - px * 2, deskY - px * 7, px, px);
+            ctx.fillRect(px2 + px + sway * 0.3, deskY - px * 7, px * 2, px * 3);
+            ctx.fillRect(px2 - px + sway * 0.5, deskY - px * 6, px * 2, px * 2);
+            ctx.fillRect(px2 + px * 3 - sway * 0.4, deskY - px * 6, px * 2, px * 2);
+            ctx.fillRect(px2 + px * 4 + sway, deskY - px * 7, px, px);
+            // Occasional new leaf (appears briefly)
+            if (frame % 300 < 30) {
+                ctx.fillStyle = '#44cc44';
+                ctx.fillRect(px2 + px * 2 + sway, deskY - px * 8, px, px);
             }
             break;
         }
         case 'cat': {
             const cx = w * 0.18;
             const catY = deskY - px * 3;
-            // Body
-            ctx.fillStyle = '#ff8c00';
-            ctx.fillRect(cx, catY, px * 4, px * 2);
-            // Head
-            ctx.fillRect(cx + px * 3, catY - px * 2, px * 3, px * 2);
+            // Stretch cycle: occasionally stands and stretches
+            const catCycle = Math.floor(frame / 400) % 3;
+            const catPhase = (frame % 400) / 400;
+
+            if (catCycle === 1 && catPhase < 0.3) {
+                // Stretching — body elongated, butt up
+                ctx.fillStyle = '#ff8c00';
+                ctx.fillRect(cx, catY - px, px * 5, px * 2);
+                ctx.fillRect(cx + px * 4, catY - px * 3, px * 3, px * 2);
+                ctx.fillRect(cx, catY - px * 2, px * 2, px);
+            } else {
+                // Normal sitting
+                ctx.fillStyle = '#ff8c00';
+                ctx.fillRect(cx, catY, px * 4, px * 2);
+                ctx.fillRect(cx + px * 3, catY - px * 2, px * 3, px * 2);
+            }
             // Ears
             ctx.fillStyle = '#ff6600';
-            ctx.fillRect(cx + px * 3, catY - px * 3, px, px);
-            ctx.fillRect(cx + px * 5, catY - px * 3, px, px);
-            // Eyes — blink occasionally
+            const headX = catCycle === 1 && catPhase < 0.3 ? cx + px * 4 : cx + px * 3;
+            const headY = catCycle === 1 && catPhase < 0.3 ? catY - px * 4 : catY - px * 3;
+            ctx.fillRect(headX, headY, px, px);
+            ctx.fillRect(headX + px * 2, headY, px, px);
+            // Eyes — blink, head turns
             if (frame % 120 < 110) {
                 ctx.fillStyle = '#00ff00';
-                ctx.fillRect(cx + px * 4, catY - px * 1.5, px * 0.5, px * 0.5);
-                ctx.fillRect(cx + px * 5, catY - px * 1.5, px * 0.5, px * 0.5);
+                const headTurn = Math.sin(frame * 0.02) * px * 0.3;
+                ctx.fillRect(headX + px + headTurn, headY + px, px * 0.5, px * 0.5);
+                ctx.fillRect(headX + px * 1.5 + headTurn, headY + px, px * 0.5, px * 0.5);
             }
-            // Tail — sway
+            // Tail — curl variations
             ctx.fillStyle = '#ff8c00';
-            const tailX = cx - px + Math.sin(frame * 0.1) * px;
+            const tailCurl = Math.sin(frame * 0.08);
+            const tailX = cx - px + tailCurl * px;
             ctx.fillRect(tailX, catY, px, px);
-            ctx.fillRect(tailX - px * 0.5, catY - px, px, px);
-            // Purr (zzz when sleeping based on seed)
+            ctx.fillRect(tailX - px * 0.5 + tailCurl * px * 0.3, catY - px, px, px);
+            ctx.fillRect(tailX - px + tailCurl * px * 0.5, catY - px * 2, px, px);
+            // Purr zzz
             if (seed % 2 === 0 && frame % 40 < 20) {
                 ctx.fillStyle = 'rgba(255,255,255,0.3)';
                 ctx.fillRect(cx + px * 6, catY - px * 3, px, px);
@@ -582,36 +758,42 @@ function drawDecoration(ctx, w, h, px, type, seed, frame, deskY) {
         }
         case 'lamp': {
             const lx = w * 0.79;
-            // Lamp post
             ctx.fillStyle = '#555555';
             ctx.fillRect(lx + px, deskY - px * 10, px, px * 9);
-            // Shade
             ctx.fillStyle = '#f0c674';
             ctx.fillRect(lx - px, deskY - px * 12, px * 4, px * 3);
-            // Light glow
-            ctx.fillStyle = 'rgba(240, 198, 116, 0.08)';
-            ctx.fillRect(lx - px * 3, deskY - px * 10, px * 8, px * 8);
-            // Base
+            // Flickering light cone
+            const lampFlicker = 0.06 + Math.sin(frame * 0.15) * 0.02 + (frame % 7 === 0 ? 0.03 : 0);
+            ctx.fillStyle = `rgba(240, 198, 116, ${lampFlicker})`;
+            ctx.fillRect(lx - px * 4, deskY - px * 10, px * 10, px * 9);
+            // Orbiting moth pixel
+            const mothAngle = frame * 0.08;
+            const mothX = lx + px + Math.cos(mothAngle) * px * 3;
+            const mothY = deskY - px * 11 + Math.sin(mothAngle) * px * 2;
+            ctx.fillStyle = 'rgba(255,255,200,0.6)';
+            ctx.fillRect(mothX, mothY, px * 0.5, px * 0.5);
             ctx.fillStyle = '#555555';
             ctx.fillRect(lx - px * 0.5, deskY - px, px * 3, px);
             break;
         }
         case 'duck': {
             const dx = w * 0.19;
-            // Rubber duck on desk
+            // Continuous bobbing
+            const bob = Math.sin(frame * 0.06) * px * 0.5;
             ctx.fillStyle = '#ffdd00';
-            ctx.fillRect(dx, deskY - px * 3, px * 3, px * 2);
-            ctx.fillRect(dx + px, deskY - px * 5, px * 2, px * 2);
-            // Beak
+            ctx.fillRect(dx, deskY - px * 3 + bob, px * 3, px * 2);
+            ctx.fillRect(dx + px, deskY - px * 5 + bob, px * 2, px * 2);
             ctx.fillStyle = '#ff8800';
-            ctx.fillRect(dx + px * 3, deskY - px * 4.5, px, px);
-            // Eye
+            ctx.fillRect(dx + px * 3, deskY - px * 4.5 + bob, px, px);
             ctx.fillStyle = '#000000';
-            ctx.fillRect(dx + px * 1.5, deskY - px * 4.5, px * 0.4, px * 0.4);
-            // Bobble
-            if (frame % 30 < 15) {
-                ctx.fillStyle = '#ffdd00';
-                ctx.fillRect(dx + px, deskY - px * 5.5, px * 2, px);
+            ctx.fillRect(dx + px * 1.5, deskY - px * 4.5 + bob, px * 0.4, px * 0.4);
+            // Occasional speech bubble
+            if (frame % 200 < 40) {
+                ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                ctx.fillRect(dx + px * 3, deskY - px * 6.5 + bob, px * 3, px * 2);
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(dx + px * 3.5, deskY - px * 6 + bob, px * 0.5, px * 0.5);
+                ctx.fillRect(dx + px * 4.5, deskY - px * 6 + bob, px * 0.5, px * 0.5);
             }
             break;
         }
@@ -646,7 +828,8 @@ function drawPoster(ctx, w, h, px, seed, frame) {
     ctx.fillRect(postX + px * 5, postY + px * 3, 1, 1);
 }
 
-function drawWindow(ctx, w, h, px, frame) {
+function drawWindow(ctx, w, h, px, frame, seed) {
+    seed = seed || 0;
     const winX = w * 0.78;
     const winY = h * 0.05;
     const winW = px * 12;
@@ -657,16 +840,78 @@ function drawWindow(ctx, w, h, px, frame) {
     // Night sky
     ctx.fillStyle = '#0a0a2a';
     ctx.fillRect(winX, winY, winW, winH);
+
+    // City skyline for some seeds
+    if (seed % 4 === 0) {
+        ctx.fillStyle = '#111122';
+        // Blocky buildings
+        const buildings = [3, 5, 4, 7, 3, 6, 4, 5];
+        for (let i = 0; i < buildings.length; i++) {
+            const bx = winX + i * px * 1.5;
+            const bh = buildings[i] * px * 0.8;
+            ctx.fillRect(bx, winY + winH - bh, px * 1.2, bh);
+            // Flickering lit windows
+            if ((frame + i * 13) % 60 < 50) {
+                ctx.fillStyle = '#ffcc66';
+                ctx.fillRect(bx + px * 0.2, winY + winH - bh + px, px * 0.3, px * 0.3);
+                ctx.fillStyle = '#111122';
+            }
+            if ((frame + i * 7) % 80 < 60) {
+                ctx.fillStyle = '#aaccff';
+                ctx.fillRect(bx + px * 0.6, winY + winH - bh + px * 2, px * 0.3, px * 0.3);
+                ctx.fillStyle = '#111122';
+            }
+        }
+    }
+
     // Moon
     ctx.fillStyle = '#ffffcc';
     ctx.fillRect(winX + px * 2, winY + px * 2, px * 3, px * 3);
     ctx.fillStyle = '#0a0a2a';
     ctx.fillRect(winX + px * 3, winY + px * 1.5, px * 2, px * 2);
+
+    // Slow-drifting cloud
+    const cloudX = winX + ((frame * 0.15 + seed * 20) % (winW + px * 6)) - px * 3;
+    if (cloudX >= winX && cloudX + px * 4 <= winX + winW) {
+        ctx.fillStyle = 'rgba(100,100,140,0.3)';
+        ctx.fillRect(cloudX, winY + px * 4, px * 4, px);
+        ctx.fillRect(cloudX + px, winY + px * 3, px * 2, px);
+    }
+
     // Stars twinkling
     ctx.fillStyle = '#ffffff';
     if (frame % 40 < 30) ctx.fillRect(winX + px * 7, winY + px * 3, 1, 1);
     if (frame % 50 < 35) ctx.fillRect(winX + px * 9, winY + px * 1, 1, 1);
     if (frame % 35 < 25) ctx.fillRect(winX + px * 5, winY + px * 7, 1, 1);
+
+    // Shooting star every ~500 frames
+    const shootPhase = frame % 500;
+    if (shootPhase < 8) {
+        ctx.fillStyle = `rgba(255,255,255,${0.8 - shootPhase * 0.1})`;
+        const sx = winX + px * 8 - shootPhase * px * 0.8;
+        const sy = winY + px + shootPhase * px * 0.4;
+        if (sx >= winX && sx <= winX + winW && sy >= winY && sy <= winY + winH) {
+            ctx.fillRect(sx, sy, px * 0.5, px * 0.3);
+        }
+    }
+
+    // Rain for some seeds
+    if (seed % 5 === 0) {
+        ctx.fillStyle = 'rgba(120,140,200,0.4)';
+        for (let r = 0; r < 8; r++) {
+            const rx = winX + ((seed * 3 + r * 17 + frame * 2) % Math.floor(winW));
+            const ry = winY + ((r * 23 + frame * 3) % Math.floor(winH));
+            if (rx >= winX && rx < winX + winW && ry >= winY && ry < winY + winH) {
+                ctx.fillRect(rx, ry, 1, px);
+            }
+        }
+        // Puddle shimmer on sill
+        if (frame % 6 < 3) {
+            ctx.fillStyle = 'rgba(120,140,200,0.15)';
+            ctx.fillRect(winX, winY + winH, winW, px * 0.5);
+        }
+    }
+
     // Windowsill
     ctx.fillStyle = '#3a3a44';
     ctx.fillRect(winX - px * 2, winY + winH + px, winW + px * 4, px);
@@ -685,6 +930,158 @@ function drawCelebration(ctx, w, h, px, frame, startFrame) {
         const size = px * (0.5 + (seed % 3) * 0.3);
         ctx.fillStyle = confettiColors[i % confettiColors.length];
         ctx.fillRect(x, y, size, size);
+    }
+}
+
+// ============================================================
+// IDLE ANIMATIONS
+// ============================================================
+
+function getIdleAction(seed, frame) {
+    // Deterministic idle cycle based on seed
+    const cycle = Math.floor(frame / 200) + seed * 3;
+    const phase = (frame % 200) / 200; // 0..1 within action
+    switch (cycle % 5) {
+        case 0: return { action: 'sip', phase };
+        case 1: return { action: 'stretch', phase };
+        case 2: return { action: 'look', phase };
+        case 3: return { action: 'scratch', phase };
+        case 4: return { action: 'lean', phase };
+    }
+}
+
+// ============================================================
+// DYNAMIC MONITOR CONTENT MODES
+// ============================================================
+
+function getMonitorMode(seed, frame) {
+    const mode = (seed + Math.floor(frame / 600)) % 4;
+    const transitionFrame = frame % 600;
+    const inTransition = transitionFrame < 2;
+    return { mode, inTransition };
+}
+
+function drawMonitorContent(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed) {
+    const { mode, inTransition } = getMonitorMode(seed, frame);
+
+    if (inTransition) {
+        // Static transition flicker
+        for (let i = 0; i < 30; i++) {
+            const sx = monX + ((seed * 13 + i * 37 + frame * 7) % Math.floor(monW));
+            const sy = monY + ((seed * 11 + i * 23 + frame * 3) % Math.floor(monH));
+            ctx.fillStyle = `rgba(${150 + (i * 37) % 105}, ${150 + (i * 23) % 105}, ${150 + (i * 17) % 105}, 0.5)`;
+            ctx.fillRect(sx, sy, px, px);
+        }
+        return;
+    }
+
+    switch (mode) {
+        case 0: drawCode(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed); break;
+        case 1: drawTerminal(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed); break;
+        case 2: drawFileTree(ctx, monX, monY, monW, monH, px, seed, frame); break;
+        case 3: drawDebugLog(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed); break;
+    }
+}
+
+function drawTerminal(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed) {
+    const maxCols = Math.floor((monW - px * 2) / px);
+    const maxRows = Math.floor((monH - px * 2) / (px * 2));
+    const scrollOffset = (frame * scrollSpeed * 0.5) % 20;
+
+    for (let row = 0; row < maxRows; row++) {
+        const lineY = monY + px + row * px * 2;
+        if (lineY >= monY + monH - px) continue;
+        const lineSeed = (seed * 11 + row + Math.floor(scrollOffset)) * 37;
+
+        // $ prompt in green
+        ctx.fillStyle = '#00ff41';
+        ctx.fillRect(monX + px, lineY, px, px - 1);
+        ctx.fillRect(monX + px * 2.5, lineY, px * 0.5, px - 1);
+
+        // Command text in white/green
+        const isOutput = (lineSeed % 3 === 0);
+        ctx.fillStyle = isOutput ? '#aaaaaa' : '#e0e0e0';
+        const lineLen = 3 + (lineSeed % (maxCols - 8));
+        for (let col = 0; col < lineLen; col++) {
+            if ((lineSeed + col * 7) % 100 < 20) continue;
+            const cx = monX + px * (4 + col);
+            if (cx + px > monX + monW - px) break;
+            ctx.fillRect(cx, lineY, px - 1, px - 1);
+        }
+    }
+
+    // Blinking cursor
+    if (frame % 30 < 15) {
+        ctx.fillStyle = '#ffffff';
+        const cursorRow = Math.min(maxRows - 1, Math.floor(scrollOffset) + 2);
+        ctx.fillRect(monX + px * 5, monY + px + cursorRow * px * 2, px, px * 1.5);
+    }
+}
+
+function drawFileTree(ctx, monX, monY, monW, monH, px, seed, frame) {
+    const maxRows = Math.floor((monH - px * 2) / (px * 2));
+    const folderColors = ['#f0c674', '#81a2be', '#b294bb', '#8abeb7'];
+    const fileColors = ['#c5c8c6', '#969896', '#b4b7b4'];
+
+    for (let row = 0; row < maxRows; row++) {
+        const lineY = monY + px + row * px * 2;
+        if (lineY >= monY + monH - px) continue;
+        const lineSeed = (seed * 5 + row) * 23;
+        const indent = lineSeed % 4;
+        const isFolder = (lineSeed % 3 !== 0);
+        const indentX = monX + px * (1 + indent * 2);
+
+        // Folder/file icon square
+        ctx.fillStyle = isFolder ? folderColors[row % folderColors.length] : fileColors[row % fileColors.length];
+        ctx.fillRect(indentX, lineY, px, px - 1);
+
+        // Name
+        const nameLen = 3 + (lineSeed % 8);
+        for (let col = 0; col < nameLen; col++) {
+            if ((lineSeed + col * 11) % 100 < 15) continue;
+            ctx.fillRect(indentX + px * (2 + col), lineY, px - 1, px - 1);
+        }
+
+        // Highlight selected row
+        if (row === (Math.floor(frame / 90) + seed) % maxRows) {
+            ctx.fillStyle = 'rgba(255,255,255,0.05)';
+            ctx.fillRect(monX, lineY - 1, monW, px * 2);
+        }
+    }
+}
+
+function drawDebugLog(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed) {
+    const maxCols = Math.floor((monW - px * 2) / px);
+    const maxRows = Math.floor((monH - px * 2) / (px * 2));
+    const scrollOffset = (frame * scrollSpeed * 0.4) % 25;
+    const logColors = ['#00ff41', '#00ff41', '#ffcc00', '#ff4444', '#00ff41', '#ffcc00'];
+
+    for (let row = 0; row < maxRows; row++) {
+        const lineY = monY + px + row * px * 2;
+        if (lineY >= monY + monH - px) continue;
+        const lineSeed = (seed * 9 + row + Math.floor(scrollOffset)) * 29;
+
+        // Timestamp in dim cyan
+        ctx.fillStyle = '#5588aa';
+        for (let c = 0; c < 4; c++) {
+            ctx.fillRect(monX + px * (1 + c), lineY, px - 1, px - 1);
+        }
+
+        // Log level color
+        const colorIdx = (lineSeed % logColors.length);
+        ctx.fillStyle = logColors[colorIdx];
+
+        // Level tag
+        ctx.fillRect(monX + px * 6, lineY, px * 2, px - 1);
+
+        // Message
+        const lineLen = 3 + (lineSeed % (maxCols - 12));
+        for (let col = 0; col < lineLen; col++) {
+            if ((lineSeed + col * 13) % 100 < 22) continue;
+            const cx = monX + px * (9 + col);
+            if (cx + px > monX + monW - px) break;
+            ctx.fillRect(cx, lineY, px - 1, px - 1);
+        }
     }
 }
 
@@ -1495,28 +1892,92 @@ function drawControlRoom(canvas, frame) {
             for (let y = my; y < my + mh; y += 4) {
                 ctx.fillRect(mx, y, mw, 1);
             }
-            // Code lines
-            const cc = codeColors[idx % codeColors.length];
+
+            // Each monitor gets a different content mode
+            const monMode = (idx + Math.floor(frame / 600)) % 4;
             const scroll = (frame * (0.3 + idx * 0.1)) % 20;
-            for (let r = 0; r < 5; r++) {
-                const ly = my + 4 + r * 6;
-                if (ly >= my + mh - 4) continue;
-                const lineSeed = (idx * 7 + r + Math.floor(scroll)) * 31;
-                const lineLen = Math.floor(mw / px) - 4;
-                ctx.fillStyle = cc[r % cc.length];
-                for (let c = 0; c < lineLen; c++) {
-                    if ((lineSeed + c * 13) % 100 < 25) continue;
-                    const cx = mx + 4 + c * (px - 1);
-                    if (cx + px > mx + mw - 4) break;
-                    ctx.fillRect(cx, ly, px - 2, px - 2);
+            const cc = codeColors[idx % codeColors.length];
+
+            if (monMode === 1) {
+                // Terminal-style
+                for (let r = 0; r < 5; r++) {
+                    const ly = my + 4 + r * 6;
+                    if (ly >= my + mh - 4) continue;
+                    ctx.fillStyle = '#aaaaaa';
+                    ctx.fillRect(mx + 4, ly, px, px - 2);
+                    ctx.fillStyle = cc[0];
+                    const lineLen = Math.floor(mw / px) - 6;
+                    for (let c = 0; c < lineLen; c++) {
+                        if (((idx * 7 + r + c) * 31) % 100 < 25) continue;
+                        ctx.fillRect(mx + 8 + c * (px - 1), ly, px - 2, px - 2);
+                    }
+                }
+            } else if (monMode === 2) {
+                // File tree
+                for (let r = 0; r < 5; r++) {
+                    const ly = my + 4 + r * 6;
+                    if (ly >= my + mh - 4) continue;
+                    const indent = (r * idx) % 3;
+                    ctx.fillStyle = r % 2 === 0 ? '#f0c674' : '#c5c8c6';
+                    ctx.fillRect(mx + 4 + indent * px, ly, px - 1, px - 2);
+                    const nameLen = 3 + (r * idx + 5) % 6;
+                    for (let c = 0; c < nameLen; c++) {
+                        ctx.fillRect(mx + 4 + indent * px + (c + 2) * (px - 1), ly, px - 2, px - 2);
+                    }
+                }
+            } else if (monMode === 3) {
+                // Debug logs — mixed colors
+                const logC = ['#00ff41', '#ffcc00', '#ff4444'];
+                for (let r = 0; r < 5; r++) {
+                    const ly = my + 4 + r * 6;
+                    if (ly >= my + mh - 4) continue;
+                    ctx.fillStyle = logC[r % logC.length];
+                    const lineLen = Math.floor(mw / px) - 4;
+                    for (let c = 0; c < lineLen; c++) {
+                        if (((idx * 11 + r + c * 13 + Math.floor(scroll)) * 29) % 100 < 25) continue;
+                        ctx.fillRect(mx + 4 + c * (px - 1), ly, px - 2, px - 2);
+                    }
+                }
+            } else {
+                // Code (default)
+                for (let r = 0; r < 5; r++) {
+                    const ly = my + 4 + r * 6;
+                    if (ly >= my + mh - 4) continue;
+                    const lineSeed = (idx * 7 + r + Math.floor(scroll)) * 31;
+                    const lineLen = Math.floor(mw / px) - 4;
+                    ctx.fillStyle = cc[r % cc.length];
+                    for (let c = 0; c < lineLen; c++) {
+                        if ((lineSeed + c * 13) % 100 < 25) continue;
+                        const cx2 = mx + 4 + c * (px - 1);
+                        if (cx2 + px > mx + mw - 4) break;
+                        ctx.fillRect(cx2, ly, px - 2, px - 2);
+                    }
                 }
             }
+
             // CRT glow
             if (frame % (70 + idx * 11) < 2) {
                 ctx.fillStyle = 'rgba(255,255,255,0.03)';
                 ctx.fillRect(mx, my, mw, mh);
             }
+
+            // Status LED dots by each monitor
+            const ledColors = ['#00ff00', '#ff0000', '#ffcc00', '#00ff00', '#00ff00', '#ffcc00'];
+            const ledState = (frame + idx * 37) % 200 < 180;
+            ctx.fillStyle = ledState ? ledColors[idx] : '#333333';
+            ctx.fillRect(mx + mw + 4, my + mh / 2, px, px);
         }
+    }
+
+    // Ceiling alert light — flashes on errors
+    const rxCR = state.reaction;
+    const rxCRActive = rxCR && rxCR.startFrame !== -1 && (frame - rxCR.startFrame) < rxCR.duration;
+    if (rxCRActive && rxCR.type === 'error') {
+        const alertAlpha = Math.sin(frame * 0.5) * 0.3 + 0.3;
+        ctx.fillStyle = `rgba(255, 0, 0, ${alertAlpha})`;
+        ctx.fillRect(w * 0.45, 0, w * 0.1, px * 2);
+        ctx.fillStyle = `rgba(255, 0, 0, ${alertAlpha * 0.3})`;
+        ctx.fillRect(w * 0.3, 0, w * 0.4, px * 4);
     }
 
     // Manager character — centered, sitting in chair
@@ -1546,10 +2007,39 @@ function drawControlRoom(canvas, frame) {
     ctx.fillRect(charX + px * 4 + scanPhase, charY - px * 9, px, px);
     ctx.fillRect(charX + px * 6 + scanPhase, charY - px * 9, px, px);
 
-    // Arms resting on armrests
+    // Manager coffee mug with steam (on console desk area)
+    const mugX = w * 0.15;
+    const mugY = h * 0.72;
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(mugX, mugY - px * 3, px * 2, px * 2);
+    ctx.fillStyle = '#8b4513';
+    ctx.fillRect(mugX + px * 0.3, mugY - px * 2.5, px * 1.4, px * 1.2);
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(mugX + px * 2, mugY - px * 2.5, px * 0.5, px);
+    // Steam
+    for (let s = 0; s < 2; s++) {
+        const stCy = ((frame * 0.7 + s * 20) % 30) / 30;
+        ctx.fillStyle = `rgba(200,200,200,${0.25 * (1 - stCy)})`;
+        ctx.fillRect(mugX + px * 0.5 + Math.sin(frame * 0.1 + s) * 2, mugY - px * 4 - stCy * px * 3, 2, 2);
+    }
+
+    // Arms — occasionally picks up phone
+    const phonePhase = frame % 600;
+    const onPhone = phonePhase < 80;
     ctx.fillStyle = palette.skin;
-    ctx.fillRect(charX - px, charY - px * 3, px * 2, px * 2);
-    ctx.fillRect(charX + px * 9, charY - px * 3, px * 2, px * 2);
+    if (onPhone) {
+        // Right hand holds phone to ear
+        ctx.fillRect(charX - px, charY - px * 3, px * 2, px * 2);
+        ctx.fillRect(charX + px * 7 + scanPhase, charY - px * 10, px * 2, px * 2);
+        // Phone
+        ctx.fillStyle = '#333344';
+        ctx.fillRect(charX + px * 7 + scanPhase, charY - px * 11, px * 2, px * 3);
+    } else {
+        // Arms resting on armrests
+        ctx.fillStyle = palette.skin;
+        ctx.fillRect(charX - px, charY - px * 3, px * 2, px * 2);
+        ctx.fillRect(charX + px * 9, charY - px * 3, px * 2, px * 2);
+    }
 
     // Reaction overlays for master
     const rx = state.reaction;
