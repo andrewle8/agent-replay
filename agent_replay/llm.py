@@ -109,13 +109,15 @@ def get_settings() -> dict:
     }
 
 
-async def generate_viewer_messages(context: str, count: int = 5) -> list[str]:
+async def generate_viewer_messages(
+    context: str, count: int = 5
+) -> tuple[list[str], str]:
     """Generate viewer chat messages using the configured LLM provider.
 
-    Returns a list of strings, or an empty list on failure.
+    Returns (messages, error_string).  error_string is empty on success.
     """
     if LLM_PROVIDER == "off":
-        return []
+        return [], ""
 
     name = _random_streamer()
     user_prompt = (
@@ -126,12 +128,12 @@ async def generate_viewer_messages(context: str, count: int = 5) -> list[str]:
 
     try:
         if LLM_PROVIDER == "openai":
-            return await _call_openai(user_prompt, system, count=count)
+            return await _call_openai(user_prompt, system, count=count), ""
         else:
-            return await _call_ollama(user_prompt + _NO_THINK, system, count=count)
-    except Exception:
-        log.debug("LLM call failed", exc_info=True)
-        return []
+            return await _call_ollama(user_prompt + _NO_THINK, system, count=count), ""
+    except Exception as exc:
+        log.warning("LLM viewer-chat call failed: %s", exc)
+        return [], str(exc)
 
 
 async def generate_interactive_reply(
@@ -160,8 +162,8 @@ async def generate_interactive_reply(
             return await _call_openai(user_prompt, SYSTEM_PROMPT_EXPLAIN, raw=True)
         else:
             return await _call_ollama(user_prompt, SYSTEM_PROMPT_EXPLAIN, raw=True)
-    except Exception:
-        log.debug("Interactive LLM call failed", exc_info=True)
+    except Exception as exc:
+        log.warning("Interactive LLM call failed: %s", exc)
         return ""
 
 
@@ -184,8 +186,8 @@ async def generate_narrator_messages(context: str, count: int = 3) -> list[str]:
             return await _call_openai(user_prompt, SYSTEM_PROMPT_NARRATOR, count=count)
         else:
             return await _call_ollama(user_prompt + _NO_THINK, SYSTEM_PROMPT_NARRATOR, count=count)
-    except Exception:
-        log.debug("Narrator LLM call failed", exc_info=True)
+    except Exception as exc:
+        log.warning("Narrator LLM call failed: %s", exc)
         return []
 
 
@@ -207,8 +209,8 @@ async def generate_viewer_reaction(user_message: str) -> list[str]:
             return await _call_openai(user_prompt, SYSTEM_PROMPT_REACT, count=2)
         else:
             return await _call_ollama(user_prompt + _NO_THINK, SYSTEM_PROMPT_REACT, count=2)
-    except Exception:
-        log.debug("Viewer reaction LLM call failed", exc_info=True)
+    except Exception as exc:
+        log.warning("Viewer reaction LLM call failed: %s", exc)
         return []
 
 

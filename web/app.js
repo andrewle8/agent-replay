@@ -2132,6 +2132,22 @@ async function addNarratorMessage() {
 // Queue of LLM-generated viewer chat messages
 const viewerChatQueue = [];
 let viewerChatFetching = false;
+let llmFallbackShown = false;
+
+function showLlmFallbackNotice(error) {
+    if (llmFallbackShown) return;
+    llmFallbackShown = true;
+    const log = document.getElementById('event-log');
+    if (!log) return;
+    const div = document.createElement('div');
+    div.className = 'chat-msg llm-fallback-notice';
+    const short = error.length > 60 ? error.slice(0, 60) + '…' : error;
+    div.innerHTML = `<span class="chat-badge">⚠️</span>`
+        + `<span class="chat-text" style="color:var(--text-dim);font-style:italic">`
+        + `Chat is using fallback messages (LLM error: ${esc(short)})</span>`;
+    log.appendChild(div);
+    if (state.autoScroll) log.scrollTop = log.scrollHeight;
+}
 
 async function fetchViewerChatBatch() {
     if (viewerChatFetching || !state.sessionFilePath) return;
@@ -2144,12 +2160,14 @@ async function fetchViewerChatBatch() {
             const data = await resp.json();
             if (data.name && data.message) {
                 viewerChatQueue.push(data);
+                llmFallbackShown = false; // LLM recovered
             } else {
+                if (data.llm_error) showLlmFallbackNotice(data.llm_error);
                 break; // empty response = no LLM available
             }
         }
     } catch (e) {
-        // LLM unavailable, will fall back to hardcoded
+        showLlmFallbackNotice(e.message || 'Network error');
     }
     viewerChatFetching = false;
 }

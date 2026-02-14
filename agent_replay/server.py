@@ -279,6 +279,8 @@ async def viewer_chat(session_id: str):
     async with _chat_lock:
         buf = _chat_buffers.get(session_id, [])
 
+        llm_error = ""
+
         if not buf:
             # Try to generate a batch from LLM
             try:
@@ -294,7 +296,9 @@ async def viewer_chat(session_id: str):
                 if file_path.exists():
                     session = parse(file_path)
                     context = _build_context(_redact_session(session.to_dict()))
-                    messages = await llm.generate_viewer_messages(context, count=5)
+                    messages, llm_error = await llm.generate_viewer_messages(
+                        context, count=5
+                    )
                     if messages:
                         buf = [
                             {
@@ -313,7 +317,10 @@ async def viewer_chat(session_id: str):
             return item
 
     # Fallback — empty means client should use hardcoded messages
-    return {"name": "", "message": ""}
+    resp = {"name": "", "message": ""}
+    if llm_error:
+        resp["llm_error"] = llm_error
+    return resp
 
 
 @app.post("/api/viewer-react")
