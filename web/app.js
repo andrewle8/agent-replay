@@ -1062,10 +1062,20 @@ function drawMonitorContent(ctx, monX, monY, monW, monH, px, seed, frame, scroll
 
 function drawRealCode(ctx, monX, monY, monW, monH, px, frame, scrollSpeed, contentText, contentType) {
     const content = contentText || state.monitorContent || '';
-    const lines = content.split('\n');
-    const maxCols = Math.floor((monW - px * 2) / (px * 0.7)); // tighter char spacing
-    const maxRows = Math.floor((monH - px * 2) / (px * 2));
-    const scrollOffset = Math.floor(frame * scrollSpeed * 0.3) % Math.max(1, lines.length);
+    if (!content) return;
+    const lines = content.split('\n').filter(l => l.trim().length > 0);
+    if (lines.length === 0) return;
+
+    const charW = px;          // each character is 1px unit wide
+    const charH = px;          // each character is 1px unit tall
+    const lineH = px * 2.5;    // line spacing
+    const gutterW = px * 4;    // gutter for line numbers
+    const margin = px * 1.5;
+    const codeX = monX + margin + gutterW;
+    const codeW = monW - margin * 2 - gutterW;
+    const maxCols = Math.floor(codeW / charW);
+    const maxRows = Math.floor((monH - margin * 2) / lineH);
+    const scrollOffset = Math.floor(frame * scrollSpeed * 0.15) % Math.max(1, lines.length);
 
     // Color scheme based on content type
     const evtType = contentType || state.monitorContentType;
@@ -1084,7 +1094,6 @@ function drawRealCode(ctx, monX, monY, monW, monH, px, frame, scrollSpeed, conte
         if (trimmed.startsWith('#') || trimmed.startsWith('//') || trimmed.startsWith('--')) return colors.comment;
         const ch = line[colIdx];
         if (ch === '"' || ch === "'" || ch === '`') return colors.string;
-        // Keywords-ish: if near start of word after indent, and short
         if (/[{}\[\]()=<>:;,]/.test(ch)) return colors.keyword;
         if (/[A-Z]/.test(ch)) return colors.keyword;
         if (/\d/.test(ch)) return colors.string;
@@ -1094,39 +1103,37 @@ function drawRealCode(ctx, monX, monY, monW, monH, px, frame, scrollSpeed, conte
     for (let row = 0; row < maxRows; row++) {
         const lineIdx = (scrollOffset + row) % lines.length;
         const line = lines[lineIdx] || '';
-        const lineY = monY + px + row * px * 2;
-        if (lineY >= monY + monH - px) continue;
+        const lineY = monY + margin + row * lineH;
+        if (lineY + charH >= monY + monH - margin) break;
 
         // Line number gutter
-        ctx.fillStyle = '#444455';
-        const numStr = String((lineIdx + 1) % 1000);
+        ctx.fillStyle = '#556666';
+        const numStr = String((lineIdx + 1) % 1000).padStart(3, ' ');
         for (let d = 0; d < numStr.length; d++) {
             if (numStr[d] !== ' ') {
-                ctx.fillRect(monX + px * (0.5 + d * 0.7), lineY, px * 0.5, px - 1);
+                ctx.fillRect(monX + margin + d * charW, lineY, charW - 1, charH);
             }
         }
 
         // Code characters
-        const startCol = Math.floor(px * (1.5 + numStr.length * 0.7));
         for (let col = 0; col < Math.min(line.length, maxCols); col++) {
             const ch = line[col];
             if (ch === ' ' || ch === '\t') continue;
             ctx.fillStyle = getCharColor(line, col);
-            const cx = monX + startCol + col * (px * 0.7);
-            if (cx + px > monX + monW - px) break;
-            ctx.fillRect(cx, lineY, px * 0.5, px - 1);
+            const cx = codeX + col * charW;
+            if (cx + charW > monX + monW - margin) break;
+            ctx.fillRect(cx, lineY, charW - 1, charH);
         }
     }
 
-    // Blinking cursor at end of visible content
+    // Blinking cursor
     if (frame % 30 < 15) {
         const cursorRow = Math.min(maxRows - 1, 3);
         const cursorLine = lines[(scrollOffset + cursorRow) % lines.length] || '';
-        const numLen = String(((scrollOffset + cursorRow) % lines.length + 1) % 1000).length;
-        const startCol = Math.floor(px * (1.5 + numLen * 0.7));
-        const cursorX = monX + startCol + Math.min(cursorLine.length, maxCols) * (px * 0.7);
+        const cursorX = codeX + Math.min(cursorLine.length, maxCols) * charW;
+        const cursorY = monY + margin + cursorRow * lineH;
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(cursorX, monY + px + cursorRow * px * 2, px * 0.5, px * 1.5);
+        ctx.fillRect(cursorX, cursorY, charW, charH * 1.5);
     }
 }
 
