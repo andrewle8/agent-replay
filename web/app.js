@@ -2089,7 +2089,9 @@ function startViewerChat() {
     // Pre-fetch LLM messages before starting the chat timer
     const ready = state.llmEnabled ? fetchViewerChatBatch() : Promise.resolve();
     function scheduleNext() {
-        const delay = 3000 + Math.random() * 7000; // 3-10s between messages
+        // Master mode: faster viewer chat to keep up with multi-project event volume
+        const isMaster = state.view === 'master';
+        const delay = isMaster ? (1000 + Math.random() * 2000) : (3000 + Math.random() * 7000);
         state.viewerChatTimer = setTimeout(() => {
             addViewerChatMessage();
             scheduleNext();
