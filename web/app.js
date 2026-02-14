@@ -21,14 +21,14 @@ const CHAT_BADGES = {
     text: '💬', complete: '✅',
 };
 
-// Pixel art palettes for different "streamers"
+// Pixel art palettes for code monkeys
 const PALETTES = [
-    { skin: '#ffcc99', hair: '#4a2800', shirt: '#9146ff', monitor: '#003322', chair: '#252540' },
-    { skin: '#e8a87c', hair: '#2d132c', shirt: '#eb0400', monitor: '#001a33', chair: '#402525' },
-    { skin: '#ffdab9', hair: '#c68642', shirt: '#00b4d8', monitor: '#1a0033', chair: '#253040' },
-    { skin: '#d4a07a', hair: '#1a1a2e', shirt: '#f0c674', monitor: '#0a1628', chair: '#403825' },
-    { skin: '#f5cba7', hair: '#6c3483', shirt: '#00e676', monitor: '#1a0a00', chair: '#254025' },
-    { skin: '#ffdbac', hair: '#e74c3c', shirt: '#81d4fa', monitor: '#001a00', chair: '#253545' },
+    { fur: '#8B5E3C', face: '#D4A574', belly: '#C8A882', shirt: '#9146ff', monitor: '#003322', chair: '#252540' },
+    { fur: '#6B4226', face: '#C4956A', belly: '#B8946E', shirt: '#eb0400', monitor: '#001a33', chair: '#402525' },
+    { fur: '#A0724A', face: '#E0C09A', belly: '#D4B68C', shirt: '#00b4d8', monitor: '#1a0033', chair: '#253040' },
+    { fur: '#5C3D2E', face: '#BA8A60', belly: '#AE845C', shirt: '#f0c674', monitor: '#0a1628', chair: '#403825' },
+    { fur: '#7A5230', face: '#D8B080', belly: '#CCA474', shirt: '#00e676', monitor: '#1a0a00', chair: '#254025' },
+    { fur: '#9B6B40', face: '#E8C8A0', belly: '#DCBC94', shirt: '#81d4fa', monitor: '#001a00', chair: '#253545' },
 ];
 
 // Desk setup variations — each seed picks one
@@ -498,17 +498,38 @@ function drawCharacter(ctx, w, h, px, palette, charX, charY, deskY, frame, rxTyp
     // Breathing — 1px body Y oscillation
     const breathY = Math.sin(frame * 0.04) * 1;
     const seed = hashCode(palette.shirt) % 1000;
+    const fur = palette.fur;
+    const face = palette.face;
+    const belly = palette.belly || face;
 
     // Idle action when no reaction active
     const idle = (!rxType) ? getIdleAction(seed, frame) : null;
 
-    // Body
-    ctx.fillStyle = palette.shirt;
+    // === TAIL (behind body) ===
+    const tailSwing = Math.sin(frame * 0.06) * px * 2;
+    ctx.fillStyle = fur;
+    ctx.fillRect(charX + px * 8 + tailSwing * 0.3, charY - px * 3 + breathY, px, px * 2);
+    ctx.fillRect(charX + px * 9 + tailSwing * 0.6, charY - px * 4 + breathY, px, px * 2);
+    ctx.fillRect(charX + px * 10 + tailSwing, charY - px * 5 + breathY, px, px);
+    // Tail curl at tip
+    ctx.fillRect(charX + px * 11 + tailSwing, charY - px * 6 + breathY, px, px);
+    ctx.fillRect(charX + px * 11 + tailSwing - px * 0.5, charY - px * 7 + breathY, px, px);
+
+    // === BODY (shirt/fur) ===
     let bodyOffX = 0;
     if (idle && idle.action === 'lean') bodyOffX = px * idle.phase;
-    ctx.fillRect(charX + px * 2 + bodyOffX, charY - px * 6 + breathY, px * 6, px * 5);
 
-    // Head — slight bob when thinking, recoil on error
+    // Fur body
+    ctx.fillStyle = fur;
+    ctx.fillRect(charX + px * 1.5 + bodyOffX, charY - px * 6 + breathY, px * 7, px * 5);
+    // Shirt/vest over body
+    ctx.fillStyle = palette.shirt;
+    ctx.fillRect(charX + px * 2 + bodyOffX, charY - px * 5.5 + breathY, px * 6, px * 4);
+    // Lighter belly patch showing through
+    ctx.fillStyle = belly;
+    ctx.fillRect(charX + px * 3.5 + bodyOffX, charY - px * 5 + breathY, px * 3, px * 3);
+
+    // === HEAD ===
     let headOffY = breathY;
     let headOffX = bodyOffX;
     if (rxType === 'think') {
@@ -527,97 +548,142 @@ function drawCharacter(ctx, w, h, px, palette, charX, charY, deskY, frame, rxTyp
         if (idle.action === 'scratch') headOffY += Math.sin(idle.phase * Math.PI * 2) * px * 0.5;
     }
 
-    ctx.fillStyle = palette.skin;
-    ctx.fillRect(charX + px * 3 + headOffX, charY - px * 11 + headOffY, px * 4, px * 4);
+    const hx = charX + px * 3 + headOffX;
+    const hy = charY - px * 11 + headOffY;
 
-    // Hair
-    ctx.fillStyle = palette.hair;
-    ctx.fillRect(charX + px * 3 + headOffX, charY - px * 12 + headOffY, px * 4, px * 2);
-    ctx.fillRect(charX + px * 2 + headOffX, charY - px * 11 + headOffY, px, px * 2);
+    // Fur head (round)
+    ctx.fillStyle = fur;
+    ctx.fillRect(hx, hy, px * 4, px * 4);
+    ctx.fillRect(hx - px * 0.5, hy + px * 0.5, px * 5, px * 3);
+    // Fur top tuft
+    ctx.fillRect(hx + px, hy - px, px * 2, px);
 
-    // Eyes — with blinking (3 frames every ~100 frames, seed-deterministic)
+    // Round ears (sticking out sides)
+    ctx.fillStyle = fur;
+    ctx.fillRect(hx - px * 1.5, hy + px * 0.5, px * 2, px * 2);
+    ctx.fillRect(hx + px * 3.5, hy + px * 0.5, px * 2, px * 2);
+    // Inner ear (lighter)
+    ctx.fillStyle = face;
+    ctx.fillRect(hx - px, hy + px, px, px);
+    ctx.fillRect(hx + px * 4, hy + px, px, px);
+
+    // Face patch (lighter oval area)
+    ctx.fillStyle = face;
+    ctx.fillRect(hx + px * 0.5, hy + px * 1.5, px * 3, px * 2.5);
+
+    // Muzzle/snout (slightly protruding lighter area)
+    ctx.fillRect(hx + px, hy + px * 3, px * 2, px * 1.5);
+
+    // === EYES ===
     const blinkCycle = (frame + seed * 7) % 100;
-    const isBlinking = blinkCycle >= 97; // 3 frames of blink
+    const isBlinking = blinkCycle >= 97;
 
-    const eyeBaseX = charX + px * 4 + headOffX;
-    const eyeBaseY = charY - px * 9 + headOffY;
+    const eyeBaseX = hx + px * 0.8;
+    const eyeBaseY = hy + px * 1.8;
 
     if (isBlinking) {
-        // Closed eyes — horizontal line
         ctx.fillStyle = '#111111';
-        ctx.fillRect(eyeBaseX, eyeBaseY + px * 0.3, px, px * 0.4);
-        ctx.fillRect(eyeBaseX + px * 2, eyeBaseY + px * 0.3, px, px * 0.4);
+        ctx.fillRect(eyeBaseX, eyeBaseY + px * 0.3, px, px * 0.3);
+        ctx.fillRect(eyeBaseX + px * 2, eyeBaseY + px * 0.3, px, px * 0.3);
     } else {
+        // Big expressive monkey eyes
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(eyeBaseX, eyeBaseY, px, px);
         ctx.fillRect(eyeBaseX + px * 2, eyeBaseY, px, px);
 
-        // Pupils — look at monitor normally, look at camera on user event
-        ctx.fillStyle = '#111111';
+        ctx.fillStyle = '#331100';
         let pupilOff = 0;
         if (rxType === 'user') pupilOff = -1;
         else if (idle && idle.action === 'look') pupilOff = Math.sin(idle.phase * Math.PI) > 0.5 ? -1 : 0;
-        ctx.fillRect(eyeBaseX + pupilOff, eyeBaseY, Math.ceil(px * 0.5), Math.ceil(px * 0.5));
-        ctx.fillRect(eyeBaseX + px * 2 + pupilOff, eyeBaseY, Math.ceil(px * 0.5), Math.ceil(px * 0.5));
+        ctx.fillRect(eyeBaseX + pupilOff, eyeBaseY + px * 0.2, Math.ceil(px * 0.5), Math.ceil(px * 0.5));
+        ctx.fillRect(eyeBaseX + px * 2 + pupilOff, eyeBaseY + px * 0.2, Math.ceil(px * 0.5), Math.ceil(px * 0.5));
     }
 
-    // Mouth — happy on complete, open on error
+    // Nostrils
+    ctx.fillStyle = '#3a2010';
+    ctx.fillRect(hx + px * 1.2, hy + px * 3.3, px * 0.4, px * 0.3);
+    ctx.fillRect(hx + px * 2.2, hy + px * 3.3, px * 0.4, px * 0.3);
+
+    // Mouth
     if (rxType === 'complete') {
+        // Big happy grin
         ctx.fillStyle = '#cc6666';
-        ctx.fillRect(eyeBaseX + px * 0.5, eyeBaseY + px * 2, px * 2, px * 0.5);
+        ctx.fillRect(hx + px * 1, hy + px * 3.8, px * 2, px * 0.5);
     } else if (rxType === 'error' && rxProgress < 0.4) {
+        // Open mouth shock
         ctx.fillStyle = '#111111';
-        ctx.fillRect(eyeBaseX + px * 0.5, eyeBaseY + px * 2.5, px * 2, px);
+        ctx.fillRect(hx + px * 1, hy + px * 3.8, px * 2, px * 0.8);
     } else if (idle && idle.action === 'sip' && idle.phase > 0.3 && idle.phase < 0.7) {
-        // Sipping — small open mouth
         ctx.fillStyle = '#111111';
-        ctx.fillRect(eyeBaseX + px, eyeBaseY + px * 2.2, px, px * 0.5);
+        ctx.fillRect(hx + px * 1.5, hy + px * 3.8, px * 0.8, px * 0.4);
+    } else {
+        // Neutral mouth line
+        ctx.fillStyle = '#3a2010';
+        ctx.fillRect(hx + px * 1.2, hy + px * 3.8, px * 1.5, px * 0.2);
     }
 
-    // Arms — typing speed varies, idle overrides
+    // === ARMS (long monkey arms with fur) ===
     const armSpeed = 0.3 * typingMult;
     const armPhase = Math.sin(frame * armSpeed);
 
     if (rxType === 'error' && rxProgress < 0.5) {
-        ctx.fillStyle = palette.skin;
-        ctx.fillRect(charX - px, charY - px * 8, px * 2, px * 2);
-        ctx.fillRect(charX + px * 9, charY - px * 8, px * 2, px * 2);
+        // Hands up in frustration
+        ctx.fillStyle = fur;
+        ctx.fillRect(charX - px, charY - px * 8, px * 2, px * 3);
+        ctx.fillRect(charX + px * 9, charY - px * 8, px * 2, px * 3);
+        ctx.fillStyle = face;
+        ctx.fillRect(charX - px, charY - px * 8, px * 1.5, px * 1.5);
+        ctx.fillRect(charX + px * 9.5, charY - px * 8, px * 1.5, px * 1.5);
     } else if (rxType === 'complete' && rxProgress < 0.6) {
         // Fist pump
         const armUp = Math.sin(rxProgress * Math.PI * 4) * px * 2;
-        ctx.fillStyle = palette.skin;
-        ctx.fillRect(charX - px, charY - px * 7 - Math.abs(armUp), px * 2, px * 2);
-        ctx.fillRect(charX + px * 9, charY - px * 7 - Math.abs(armUp), px * 2, px * 2);
+        ctx.fillStyle = fur;
+        ctx.fillRect(charX - px, charY - px * 7 - Math.abs(armUp), px * 2, px * 3);
+        ctx.fillRect(charX + px * 9, charY - px * 7 - Math.abs(armUp), px * 2, px * 3);
+        ctx.fillStyle = face;
+        ctx.fillRect(charX - px, charY - px * 7 - Math.abs(armUp), px * 1.5, px * 1.5);
+        ctx.fillRect(charX + px * 9.5, charY - px * 7 - Math.abs(armUp), px * 1.5, px * 1.5);
     } else if (rxType === 'think') {
-        ctx.fillStyle = palette.skin;
-        ctx.fillRect(charX + px * 2, charY - px * 8, px * 2, px * 3);
-        ctx.fillRect(charX + px * 8, charY - px * 4, px * 2, px * 2);
+        // Hand on chin, other resting
+        ctx.fillStyle = fur;
+        ctx.fillRect(charX + px * 2, charY - px * 8, px * 2, px * 4);
+        ctx.fillRect(charX + px * 8, charY - px * 4, px * 2, px * 3);
+        ctx.fillStyle = face;
+        ctx.fillRect(charX + px * 2, charY - px * 8, px * 1.5, px * 1.5);
     } else if (idle && idle.action === 'sip') {
-        // Sip: one hand reaches to mouth area
-        ctx.fillStyle = palette.skin;
+        ctx.fillStyle = fur;
         const sipLift = Math.sin(idle.phase * Math.PI);
-        ctx.fillRect(charX + px * 7, charY - px * 8 - sipLift * px * 2, px * 2, px * 2);
-        ctx.fillRect(charX, charY - px * 4, px * 2, px * 2);
+        ctx.fillRect(charX + px * 7, charY - px * 8 - sipLift * px * 2, px * 2, px * 3);
+        ctx.fillRect(charX, charY - px * 4, px * 2, px * 3);
+        ctx.fillStyle = face;
+        ctx.fillRect(charX + px * 7, charY - px * 8 - sipLift * px * 2, px * 1.5, px * 1.5);
     } else if (idle && idle.action === 'stretch') {
-        // Arms up, lean back
-        ctx.fillStyle = palette.skin;
+        ctx.fillStyle = fur;
         const stretchUp = idle.phase * px * 4;
-        ctx.fillRect(charX - px, charY - px * 7 - stretchUp, px * 2, px * 2);
-        ctx.fillRect(charX + px * 9, charY - px * 7 - stretchUp, px * 2, px * 2);
+        ctx.fillRect(charX - px, charY - px * 7 - stretchUp, px * 2, px * 3);
+        ctx.fillRect(charX + px * 9, charY - px * 7 - stretchUp, px * 2, px * 3);
+        ctx.fillStyle = face;
+        ctx.fillRect(charX - px, charY - px * 7 - stretchUp, px * 1.5, px * 1.5);
+        ctx.fillRect(charX + px * 9.5, charY - px * 7 - stretchUp, px * 1.5, px * 1.5);
     } else if (idle && idle.action === 'scratch') {
-        // Hand to head
-        ctx.fillStyle = palette.skin;
-        ctx.fillRect(charX + px * 7 + headOffX, charY - px * 11 + headOffY, px * 2, px * 2);
-        ctx.fillRect(charX, charY - px * 4, px * 2, px * 2);
+        ctx.fillStyle = fur;
+        ctx.fillRect(charX + px * 7 + headOffX, hy, px * 2, px * 3);
+        ctx.fillRect(charX, charY - px * 4, px * 2, px * 3);
+        ctx.fillStyle = face;
+        ctx.fillRect(charX + px * 7 + headOffX, hy, px * 1.5, px * 1.5);
     } else {
-        // Normal typing
+        // Normal typing — long monkey arms reaching to keyboard
         const lArmY = charY - px * 4 + breathY + (armPhase > 0 ? -px : 0);
         const rArmY = charY - px * 4 + breathY + (armPhase > 0 ? 0 : -px);
-        ctx.fillStyle = palette.skin;
-        ctx.fillRect(charX, lArmY, px * 2, px * 2);
-        ctx.fillRect(charX - px, lArmY + px, px, px);
-        ctx.fillRect(charX + px * 8, rArmY, px * 2, px * 2);
-        ctx.fillRect(charX + px * 10, rArmY + px, px, px);
+        ctx.fillStyle = fur;
+        ctx.fillRect(charX, lArmY, px * 2, px * 3);
+        ctx.fillRect(charX - px, lArmY + px * 2, px, px);
+        ctx.fillRect(charX + px * 8, rArmY, px * 2, px * 3);
+        ctx.fillRect(charX + px * 10, rArmY + px * 2, px, px);
+        // Hands (lighter)
+        ctx.fillStyle = face;
+        ctx.fillRect(charX - px, lArmY + px * 2, px * 1.5, px * 1.5);
+        ctx.fillRect(charX + px * 9.5, rArmY + px * 2, px * 1.5, px * 1.5);
     }
 }
 
@@ -1342,7 +1408,7 @@ function renderDashboard() {
                 <span class="thumb-time">${timeAgo}</span>
             </div>
             <div class="channel-info">
-                <div class="${avatarClass}">🤖</div>
+                <div class="${avatarClass}">🐒</div>
                 <div class="channel-text">
                     <div class="channel-name">${esc(s.project_name)}${countBadge}</div>
                     <div class="channel-category">Coding · ${esc(s.slug || 'Claude Code')}</div>
@@ -1533,7 +1599,7 @@ function addTipToChat(amount) {
         const reaction = reactions[Math.floor(Math.random() * reactions.length)];
         const replyDiv = document.createElement('div');
         replyDiv.className = 'chat-msg is-streamer-reply';
-        replyDiv.innerHTML = `<span class="chat-badge">🤖</span>`
+        replyDiv.innerHTML = `<span class="chat-badge">🐵</span>`
             + `<span class="chat-name" style="color:var(--purple)">${esc(streamerName)}</span>`
             + `<span class="chat-text">${esc(reaction)}</span>`;
         log.appendChild(replyDiv);
@@ -1649,7 +1715,7 @@ function addRandomViewerTip(log) {
         const reaction = reactions[Math.floor(Math.random() * reactions.length)];
         const replyDiv = document.createElement('div');
         replyDiv.className = 'chat-msg is-streamer-reply';
-        replyDiv.innerHTML = `<span class="chat-badge">🤖</span>`
+        replyDiv.innerHTML = `<span class="chat-badge">🐵</span>`
             + `<span class="chat-name" style="color:var(--purple)">${esc(streamerName)}</span>`
             + `<span class="chat-text">${esc(reaction)}</span>`;
         log.appendChild(replyDiv);
@@ -2220,10 +2286,11 @@ function drawControlRoom(canvas, frame) {
         ctx.fillRect(w * 0.3, 0, w * 0.4, px * 4);
     }
 
-    // Manager character — centered, sitting in chair
+    // Manager monkey — centered, sitting in chair
     const charX = w * 0.44;
     const charY = h * 0.75 - px;
-    const palette = { skin: '#ffcc99', hair: '#333355', shirt: '#9146ff', chair: '#252540' };
+    const mFur = '#6B4226';
+    const mFace = '#C4956A';
 
     // Big comfy chair
     ctx.fillStyle = '#1a1a3a';
@@ -2231,23 +2298,60 @@ function drawControlRoom(canvas, frame) {
     ctx.fillStyle = '#252550';
     ctx.fillRect(charX - px * 3, charY - px * 4, px * 16, px * 7);
 
-    // Body
-    ctx.fillStyle = palette.shirt;
-    ctx.fillRect(charX + px * 2, charY - px * 6, px * 6, px * 5);
+    // Tail behind chair
+    const mTailSwing = Math.sin(frame * 0.05) * px;
+    ctx.fillStyle = mFur;
+    ctx.fillRect(charX + px * 10 + mTailSwing, charY - px * 2, px, px * 3);
+    ctx.fillRect(charX + px * 11 + mTailSwing, charY - px * 3, px, px * 2);
+
+    // Body (fur + shirt)
+    ctx.fillStyle = mFur;
+    ctx.fillRect(charX + px * 1.5, charY - px * 6, px * 7, px * 5);
+    ctx.fillStyle = '#9146ff';
+    ctx.fillRect(charX + px * 2, charY - px * 5.5, px * 6, px * 4);
+    ctx.fillStyle = mFace;
+    ctx.fillRect(charX + px * 3.5, charY - px * 5, px * 3, px * 3);
 
     // Head — slowly scanning left to right
     const scanPhase = Math.sin(frame * 0.03) * px * 2;
-    ctx.fillStyle = palette.skin;
-    ctx.fillRect(charX + px * 3 + scanPhase, charY - px * 11, px * 4, px * 4);
-    ctx.fillStyle = palette.hair;
-    ctx.fillRect(charX + px * 3 + scanPhase, charY - px * 12, px * 4, px * 2);
+    const mhx = charX + px * 3 + scanPhase;
+    const mhy = charY - px * 11;
 
-    // Eyes — looking at monitors
+    ctx.fillStyle = mFur;
+    ctx.fillRect(mhx, mhy, px * 4, px * 4);
+    ctx.fillRect(mhx - px * 0.5, mhy + px * 0.5, px * 5, px * 3);
+    ctx.fillRect(mhx + px, mhy - px, px * 2, px);
+    // Ears
+    ctx.fillRect(mhx - px * 1.5, mhy + px * 0.5, px * 2, px * 2);
+    ctx.fillRect(mhx + px * 3.5, mhy + px * 0.5, px * 2, px * 2);
+    ctx.fillStyle = mFace;
+    ctx.fillRect(mhx - px, mhy + px, px, px);
+    ctx.fillRect(mhx + px * 4, mhy + px, px, px);
+    // Face
+    ctx.fillRect(mhx + px * 0.5, mhy + px * 1.5, px * 3, px * 2.5);
+    // Eyes
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(charX + px * 4 + scanPhase, charY - px * 9, px, px);
-    ctx.fillRect(charX + px * 6 + scanPhase, charY - px * 9, px, px);
+    ctx.fillRect(mhx + px * 0.8, mhy + px * 1.8, px, px);
+    ctx.fillRect(mhx + px * 2.8, mhy + px * 1.8, px, px);
+    ctx.fillStyle = '#331100';
+    ctx.fillRect(mhx + px * 0.8, mhy + px * 2, px * 0.5, px * 0.5);
+    ctx.fillRect(mhx + px * 2.8, mhy + px * 2, px * 0.5, px * 0.5);
+    // Muzzle + nostrils
+    ctx.fillStyle = mFace;
+    ctx.fillRect(mhx + px, mhy + px * 3, px * 2, px * 1.5);
+    ctx.fillStyle = '#3a2010';
+    ctx.fillRect(mhx + px * 1.2, mhy + px * 3.3, px * 0.4, px * 0.3);
+    ctx.fillRect(mhx + px * 2.2, mhy + px * 3.3, px * 0.4, px * 0.3);
 
-    // Manager coffee mug with steam (on console desk area)
+    // Banana on desk (manager perk)
+    const banX = w * 0.78;
+    ctx.fillStyle = '#FFD700';
+    ctx.fillRect(banX, charY + px, px * 3, px);
+    ctx.fillRect(banX + px * 0.5, charY, px * 2, px);
+    ctx.fillStyle = '#8B6914';
+    ctx.fillRect(banX + px * 2.5, charY - px * 0.5, px * 0.5, px * 0.5);
+
+    // Manager coffee mug with steam
     const mugX = w * 0.15;
     const mugY = h * 0.72;
     ctx.fillStyle = '#e0e0e0';
@@ -2256,29 +2360,30 @@ function drawControlRoom(canvas, frame) {
     ctx.fillRect(mugX + px * 0.3, mugY - px * 2.5, px * 1.4, px * 1.2);
     ctx.fillStyle = '#e0e0e0';
     ctx.fillRect(mugX + px * 2, mugY - px * 2.5, px * 0.5, px);
-    // Steam
     for (let s = 0; s < 2; s++) {
         const stCy = ((frame * 0.7 + s * 20) % 30) / 30;
         ctx.fillStyle = `rgba(200,200,200,${0.25 * (1 - stCy)})`;
         ctx.fillRect(mugX + px * 0.5 + Math.sin(frame * 0.1 + s) * 2, mugY - px * 4 - stCy * px * 3, 2, 2);
     }
 
-    // Arms — occasionally picks up phone
+    // Arms — occasionally picks up phone (or banana)
     const phonePhase = frame % 600;
     const onPhone = phonePhase < 80;
-    ctx.fillStyle = palette.skin;
+    ctx.fillStyle = mFur;
     if (onPhone) {
-        // Right hand holds phone to ear
-        ctx.fillRect(charX - px, charY - px * 3, px * 2, px * 2);
-        ctx.fillRect(charX + px * 7 + scanPhase, charY - px * 10, px * 2, px * 2);
-        // Phone
+        ctx.fillRect(charX - px, charY - px * 3, px * 2, px * 3);
+        ctx.fillRect(charX + px * 7 + scanPhase, charY - px * 10, px * 2, px * 3);
+        ctx.fillStyle = mFace;
+        ctx.fillRect(charX - px, charY - px * 3, px * 1.5, px * 1.5);
+        ctx.fillRect(charX + px * 7 + scanPhase, charY - px * 10, px * 1.5, px * 1.5);
         ctx.fillStyle = '#333344';
         ctx.fillRect(charX + px * 7 + scanPhase, charY - px * 11, px * 2, px * 3);
     } else {
-        // Arms resting on armrests
-        ctx.fillStyle = palette.skin;
-        ctx.fillRect(charX - px, charY - px * 3, px * 2, px * 2);
-        ctx.fillRect(charX + px * 9, charY - px * 3, px * 2, px * 2);
+        ctx.fillRect(charX - px, charY - px * 3, px * 2, px * 3);
+        ctx.fillRect(charX + px * 9, charY - px * 3, px * 2, px * 3);
+        ctx.fillStyle = mFace;
+        ctx.fillRect(charX - px, charY - px * 3, px * 1.5, px * 1.5);
+        ctx.fillRect(charX + px * 9.5, charY - px * 3, px * 1.5, px * 1.5);
     }
 
     // Reaction overlays for master
