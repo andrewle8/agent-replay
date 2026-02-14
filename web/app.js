@@ -1,4 +1,4 @@
-/* AgentTV — Twitch-style agent session viewer */
+/* AgentsTV — Twitch-style agent session viewer */
 
 const ICONS = {
     spawn: '★', think: '◆', tool_call: '▸', tool_result: '◂',
@@ -1735,7 +1735,7 @@ function renderSession() {
     const s = state.session;
     if (!s) return;
 
-    document.getElementById('session-slug').textContent = s.slug || 'AgentTV Stream';
+    document.getElementById('session-slug').textContent = s.slug || 'AgentsTV Stream';
     const meta = [];
     if (s.version) meta.push(`v${s.version}`);
     if (s.branch) meta.push(`⎇ ${s.branch}`);

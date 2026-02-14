@@ -1,8 +1,8 @@
-# AgentTV
+# AgentsTV
 
 Twitch-style live visualizer for Claude Code sessions. Watch AI code monkeys work in real-time with pixel art webcams, animated chat, and streaming overlays.
 
-![AgentTV screenshot](screenshot.png)
+![AgentsTV screenshot](screenshot.png)
 
 ## Install
 
