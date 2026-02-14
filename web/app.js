@@ -210,7 +210,7 @@ function drawPixelScene(canvas, seed, frame, isLarge) {
 
     // Monitor(s) based on setup
     const typingMult = isLarge ? state.typingSpeed : 1.0;
-    drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult, isLarge);
+    drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult, isLarge, canvas);
 
     // Chair
     const charX = w * 0.42;
@@ -352,14 +352,15 @@ function drawPixelScene(canvas, seed, frame, isLarge) {
     }
 }
 
-function drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult, isLarge) {
+function drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxType, rxProgress, typingMult, isLarge, canvas) {
     const scrollSpeed = 0.5 * typingMult;
+    const mc = canvas && canvas._monitorContent;
 
     if (setup === 'dual') {
-        drawMonitor(ctx, w * 0.22, deskY - px * 18, px * 18, px * 14, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge);
-        drawMonitor(ctx, w * 0.52, deskY - px * 18, px * 18, px * 14, px, palette, seed + 7, frame, scrollSpeed * 0.6, rxType, rxProgress, false);
+        drawMonitor(ctx, w * 0.22, deskY - px * 18, px * 18, px * 14, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc);
+        drawMonitor(ctx, w * 0.52, deskY - px * 18, px * 18, px * 14, px, palette, seed + 7, frame, scrollSpeed * 0.6, rxType, rxProgress, false, null);
     } else if (setup === 'ultrawide') {
-        drawMonitor(ctx, w * 0.22, deskY - px * 16, px * 36, px * 14, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge);
+        drawMonitor(ctx, w * 0.22, deskY - px * 16, px * 36, px * 14, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc);
     } else if (setup === 'laptop') {
         const lx = w * 0.32;
         const ly = deskY - px * 14;
@@ -367,13 +368,13 @@ function drawMonitorSetup(ctx, w, h, px, setup, palette, seed, frame, deskY, rxT
         const lh = px * 12;
         ctx.fillStyle = '#3a3a44';
         ctx.fillRect(lx - px, deskY - px * 2, lw + px * 2, px * 2);
-        drawMonitor(ctx, lx, ly, lw, lh, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge);
+        drawMonitor(ctx, lx, ly, lw, lh, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc);
     } else {
-        drawMonitor(ctx, w * 0.32, deskY - px * 18, px * 28, px * 16, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge);
+        drawMonitor(ctx, w * 0.32, deskY - px * 18, px * 28, px * 16, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, mc);
     }
 }
 
-function drawMonitor(ctx, monX, monY, monW, monH, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge) {
+function drawMonitor(ctx, monX, monY, monW, monH, px, palette, seed, frame, scrollSpeed, rxType, rxProgress, isLarge, monitorContent) {
     // Bezel
     ctx.fillStyle = '#2c2c34';
     ctx.fillRect(monX - px, monY - px, monW + px * 2, monH + px * 2);
@@ -402,8 +403,10 @@ function drawMonitor(ctx, monX, monY, monW, monH, px, palette, seed, frame, scro
     } else if (rxType === 'think') {
         drawThinkingScreen(ctx, monX, monY, monW, monH, px, frame);
     } else {
-        if (isLarge && state.monitorContent) {
-            drawRealCode(ctx, monX, monY, monW, monH, px, frame, scrollSpeed);
+        const mc = monitorContent || (isLarge ? state.monitorContent : null);
+        if (mc) {
+            const mcType = monitorContent ? monitorContent._type : state.monitorContentType;
+            drawRealCode(ctx, monX, monY, monW, monH, px, frame, scrollSpeed, mc._text || mc, mcType);
         } else {
             drawMonitorContent(ctx, monX, monY, monW, monH, px, seed, frame, scrollSpeed);
         }
@@ -991,15 +994,15 @@ function drawMonitorContent(ctx, monX, monY, monW, monH, px, seed, frame, scroll
     }
 }
 
-function drawRealCode(ctx, monX, monY, monW, monH, px, frame, scrollSpeed) {
-    const content = state.monitorContent || '';
+function drawRealCode(ctx, monX, monY, monW, monH, px, frame, scrollSpeed, contentText, contentType) {
+    const content = contentText || state.monitorContent || '';
     const lines = content.split('\n');
     const maxCols = Math.floor((monW - px * 2) / (px * 0.7)); // tighter char spacing
     const maxRows = Math.floor((monH - px * 2) / (px * 2));
     const scrollOffset = Math.floor(frame * scrollSpeed * 0.3) % Math.max(1, lines.length);
 
     // Color scheme based on content type
-    const evtType = state.monitorContentType;
+    const evtType = contentType || state.monitorContentType;
     const colorSchemes = {
         bash:        { keyword: '#ffcc00', text: '#e0e0e0', comment: '#666666', string: '#00ff41' },
         error:       { keyword: '#ff4444', text: '#ff8888', comment: '#884444', string: '#ffaaaa' },
@@ -1362,10 +1365,32 @@ function renderDashboard() {
     grid.querySelectorAll('.channel-thumb canvas').forEach(canvas => {
         const seed = canvas.dataset.seed;
         if (seed === 'master') {
-            startPixelAnimation(canvas, 99, false); // special seed for control room
+            startPixelAnimation(canvas, 99, false);
         } else {
             startPixelAnimation(canvas, parseInt(seed) || 0, false);
         }
+    });
+
+    // Fetch latest event content for each session thumbnail
+    groups.forEach((g, idx) => {
+        const filePath = g.latest.file_path;
+        fetch('/api/session/' + encodeURIComponent(filePath))
+            .then(r => r.json())
+            .then(data => {
+                if (data.error || !data.events || !data.events.length) return;
+                // Find last content-bearing event
+                for (let i = data.events.length - 1; i >= 0; i--) {
+                    const evt = data.events[i];
+                    if (evt.content && evt.content.length > 10) {
+                        const canvas = grid.querySelector(`canvas[data-seed="${idx}"]`);
+                        if (canvas) {
+                            canvas._monitorContent = { _text: evt.content, _type: evt.type };
+                        }
+                        break;
+                    }
+                }
+            })
+            .catch(() => {});
     });
 }
 
