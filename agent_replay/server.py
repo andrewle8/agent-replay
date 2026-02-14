@@ -99,6 +99,112 @@ async def ws_session(websocket: WebSocket, session_id: str):
         pass
 
 
+@app.get("/api/master")
+async def get_master():
+    """Return merged events from all recent sessions for the master channel."""
+    summaries = scan_sessions()
+    # Take the most recent session per project (top 20)
+    seen_projects: set[str] = set()
+    selected: list[dict] = []
+    for s in summaries:
+        if s.project_name in seen_projects:
+            continue
+        seen_projects.add(s.project_name)
+        selected.append(s.to_dict())
+        if len(selected) >= 20:
+            break
+
+    # Parse each and merge events with project tags
+    all_events = []
+    all_agents = {}
+    for summary in selected:
+        try:
+            session = parse(Path(summary["file_path"]))
+            proj = summary["project_name"]
+            for evt in session.events:
+                d = evt.to_dict()
+                d["project"] = proj
+                all_events.append(d)
+            for aid, agent in session.agents.items():
+                key = f"{proj}:{aid}"
+                ad = agent.to_dict()
+                ad["project"] = proj
+                ad["id"] = key
+                ad["name"] = f"{proj}/{agent.name}"
+                all_agents[key] = ad
+        except Exception:
+            continue
+
+    # Sort by timestamp, keep last 2000
+    all_events.sort(key=lambda e: e["timestamp"])
+    all_events = all_events[-2000:]
+
+    return {
+        "events": all_events,
+        "agents": all_agents,
+        "session_count": len(selected),
+        "sessions": selected,
+    }
+
+
+@app.websocket("/ws/master")
+async def ws_master(websocket: WebSocket):
+    """Live updates for master channel — polls all active sessions every 3s."""
+    await websocket.accept()
+    last_event_counts: dict[str, int] = {}
+
+    try:
+        while True:
+            summaries = scan_sessions()
+            active = [s for s in summaries if s.is_active]
+            new_events = []
+            all_agents = {}
+
+            for s in active:
+                try:
+                    session = parse(Path(s.file_path))
+                    proj = s.project_name
+                    prev_count = last_event_counts.get(s.file_path, 0)
+
+                    if prev_count == 0:
+                        # First time: send last 20 events
+                        start = max(0, len(session.events) - 20)
+                    else:
+                        start = prev_count
+
+                    for evt in session.events[start:]:
+                        d = evt.to_dict()
+                        d["project"] = proj
+                        new_events.append(d)
+
+                    last_event_counts[s.file_path] = len(session.events)
+
+                    for aid, agent in session.agents.items():
+                        key = f"{proj}:{aid}"
+                        ad = agent.to_dict()
+                        ad["project"] = proj
+                        ad["id"] = key
+                        ad["name"] = f"{proj}/{agent.name}"
+                        all_agents[key] = ad
+                except Exception:
+                    continue
+
+            if new_events:
+                new_events.sort(key=lambda e: e["timestamp"])
+                await websocket.send_json({
+                    "type": "delta",
+                    "events": new_events,
+                    "agents": all_agents,
+                    "active_count": len(active),
+                })
+
+            await asyncio.sleep(3)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
+
 @app.websocket("/ws/dashboard")
 async def ws_dashboard(websocket: WebSocket):
     """Live updates for the dashboard — polls session list every 10s."""

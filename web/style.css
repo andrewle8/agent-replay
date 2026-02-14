@@ -704,6 +704,75 @@ body {
 .name-type-complete { color: var(--text); }
 .name-type-user { color: var(--purple-light); }
 
+/* Expand chat button */
+.expand-chat-btn {
+    background: var(--bg-surface2);
+    border: none;
+    color: var(--text-dim);
+    font-size: 14px;
+    padding: 2px 8px;
+    cursor: pointer;
+    border-radius: 3px;
+    margin-left: auto;
+}
+.expand-chat-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+/* Fullscreen chat mode */
+.chat-fullscreen .stream-main { display: none; }
+.chat-fullscreen .chat-sidebar {
+    width: 100%;
+    min-width: 100%;
+    max-width: 100%;
+    border-left: none;
+}
+.chat-fullscreen .chat-log {
+    font-size: 13px;
+}
+.chat-fullscreen .chat-msg {
+    padding: 4px 20px;
+    line-height: 1.7;
+    white-space: normal;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+.chat-fullscreen .chat-msg .chat-text {
+    white-space: normal;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+.chat-fullscreen .chat-expanded {
+    padding: 8px 20px 8px 40px;
+    max-height: 500px;
+    font-size: 12px;
+}
+.chat-fullscreen .chat-panels {
+    max-height: 150px;
+}
+
+/* Master channel — project tag in chat */
+.chat-msg .project-tag {
+    background: var(--purple);
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 0 5px;
+    border-radius: 3px;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+
+/* Master channel card on dashboard */
+.channel-card.master-card {
+    grid-column: 1 / -1;
+    border: 2px solid var(--purple);
+}
+.channel-card.master-card .channel-thumb {
+    aspect-ratio: 21/6;
+}
+.channel-card.master-card .channel-avatar {
+    background: linear-gradient(135deg, var(--purple), var(--gold));
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

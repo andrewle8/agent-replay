@@ -71,6 +71,11 @@ let state = {
     reaction: null,       // current reaction: {type, startFrame, duration}
     typingSpeed: 1.0,     // multiplier for typing animation speed
     sessionFilePath: '',  // for localStorage key
+    chatFullscreen: false,
+    // Master channel state
+    masterEvents: [],
+    masterAgents: {},
+    masterSessionCount: 0,
 };
 
 // ============================================================
@@ -720,8 +725,11 @@ function handleRoute() {
     stopAllAnimations();
     state.reaction = null;
     state.typingSpeed = 1.0;
+    state.chatFullscreen = false;
     const hash = window.location.hash || '#/';
-    if (hash.startsWith('#/session/')) {
+    if (hash === '#/master') {
+        showMasterChannel();
+    } else if (hash.startsWith('#/session/')) {
         const filePath = decodeURIComponent(hash.slice('#/session/'.length));
         showSessionView(filePath);
     } else {
@@ -807,7 +815,28 @@ function renderDashboard() {
     const groups = consolidateSessions(state.sessions);
     document.getElementById('channel-count').textContent = `(${groups.length} channels)`;
 
-    grid.innerHTML = groups.map((g, idx) => {
+    // Master channel card at the top
+    const activeCount = groups.filter(g => g.hasActive).length;
+    const totalEvts = groups.reduce((s, g) => s + g.totalEvents, 0);
+    const masterCard = `
+    <div class="channel-card master-card" data-master="true">
+        <div class="channel-thumb">
+            <canvas width="640" height="180" data-seed="master"></canvas>
+            <div class="thumb-overlay"><span class="live-pill">ALL STREAMS</span></div>
+            <span class="thumb-viewers">${totalEvts} total events</span>
+            <span class="thumb-time">${activeCount} active</span>
+        </div>
+        <div class="channel-info">
+            <div class="channel-avatar" style="background:linear-gradient(135deg,var(--purple),var(--gold))">👁</div>
+            <div class="channel-text">
+                <div class="channel-name">🖥 Master Control Room</div>
+                <div class="channel-category">All agents · All projects · Everything at once</div>
+                <div class="channel-tags"><span class="tag">${groups.length} projects</span></div>
+            </div>
+        </div>
+    </div>`;
+
+    grid.innerHTML = masterCard + groups.map((g, idx) => {
         const s = g.latest;
         const isLive = g.hasActive;
         const pill = isLive
@@ -843,13 +872,21 @@ function renderDashboard() {
 
     grid.querySelectorAll('.channel-card').forEach(card => {
         card.addEventListener('click', () => {
-            navigate('#/session/' + encodeURIComponent(card.dataset.path));
+            if (card.dataset.master) {
+                navigate('#/master');
+            } else {
+                navigate('#/session/' + encodeURIComponent(card.dataset.path));
+            }
         });
     });
 
     grid.querySelectorAll('.channel-thumb canvas').forEach(canvas => {
-        const seed = parseInt(canvas.dataset.seed) || 0;
-        startPixelAnimation(canvas, seed, false);
+        const seed = canvas.dataset.seed;
+        if (seed === 'master') {
+            startPixelAnimation(canvas, 99, false); // special seed for control room
+        } else {
+            startPixelAnimation(canvas, parseInt(seed) || 0, false);
+        }
     });
 }
 
@@ -875,6 +912,15 @@ async function showSessionView(filePath) {
     document.getElementById('filter-toggle-btn').onclick = () => {
         const panel = document.getElementById('filters-panel');
         panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    };
+
+    // Fullscreen chat toggle
+    document.getElementById('expand-chat-btn').onclick = () => {
+        state.chatFullscreen = !state.chatFullscreen;
+        const layout = document.querySelector('.stream-layout');
+        layout.classList.toggle('chat-fullscreen', state.chatFullscreen);
+        document.getElementById('expand-chat-btn').textContent = state.chatFullscreen ? '⛶' : '⛶';
+        document.getElementById('expand-chat-btn').title = state.chatFullscreen ? 'Exit fullscreen chat' : 'Toggle fullscreen chat';
     };
 
     // Restore persisted UI
@@ -1214,6 +1260,325 @@ function connectSessionWS(filePath) {
             }
         }
     };
+}
+
+// ============================================================
+// MASTER CHANNEL
+// ============================================================
+
+async function showMasterChannel() {
+    state.view = 'master';
+    state.inventory = {};
+    state.masterEvents = [];
+    state.masterAgents = {};
+    state.sessionFilePath = '__master__';
+    loadPersistedState('__master__');
+
+    if (state.ws) { state.ws.close(); state.ws = null; }
+    document.getElementById('dashboard-view').style.display = 'none';
+    document.getElementById('session-view').style.display = 'flex';
+
+    document.getElementById('back-btn').onclick = () => navigate('#/');
+    document.getElementById('event-log').innerHTML = '<div style="padding:20px;color:var(--text-muted)">Loading all streams…</div>';
+
+    setupActions('__master__');
+
+    document.getElementById('filter-toggle-btn').onclick = () => {
+        const panel = document.getElementById('filters-panel');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    };
+
+    document.getElementById('expand-chat-btn').onclick = () => {
+        state.chatFullscreen = !state.chatFullscreen;
+        document.querySelector('.stream-layout').classList.toggle('chat-fullscreen', state.chatFullscreen);
+    };
+
+    document.getElementById('like-count').textContent = state.likes;
+    const followBtn = document.getElementById('follow-btn');
+    followBtn.textContent = state.following ? '♥ Following' : '+ Follow';
+    followBtn.classList.toggle('following', state.following);
+    if (state.likes > 0) document.getElementById('like-btn').classList.add('liked');
+
+    try {
+        const resp = await fetch('/api/master');
+        const data = await resp.json();
+
+        state.session = {
+            slug: '🖥 Master Control Room',
+            version: '',
+            branch: '',
+            agents: data.agents,
+            events: data.events,
+        };
+        state.masterSessionCount = data.session_count;
+
+        initFilters();
+        renderMasterSession();
+        connectMasterWS();
+
+        const canvas = document.getElementById('webcam-canvas');
+        startControlRoomAnimation(canvas);
+    } catch (e) {
+        document.getElementById('event-log').innerHTML = '<div style="padding:20px;color:var(--text-muted)">Failed to load master channel</div>';
+    }
+}
+
+function renderMasterSession() {
+    const s = state.session;
+    if (!s) return;
+
+    document.getElementById('session-slug').textContent = '🖥 Master Control Room';
+    document.getElementById('session-meta').textContent = `${state.masterSessionCount} projects · All agents`;
+
+    renderDonationGoal();
+    renderMasterChatLog(s);
+    renderMods(s);
+    renderViewers();
+    renderViewerCount();
+}
+
+function renderMasterChatLog(s) {
+    const log = document.getElementById('event-log');
+    const wasAtBottom = state.autoScroll;
+    log.innerHTML = '';
+    state.inventory = {};
+
+    s.events.forEach((evt, idx) => {
+        if (evt.file_path) {
+            const sp = evt.short_path || evt.file_path;
+            if (evt.type === 'file_create') state.inventory[sp] = 'C';
+            else if (evt.type === 'file_update') state.inventory[sp] = 'W';
+            else if (evt.type === 'file_read' && !state.inventory[sp]) state.inventory[sp] = 'R';
+        }
+
+        if (!isEventVisible(evt.type)) return;
+
+        const agent = s.agents[evt.agent_id] || s.agents[`${evt.project}:${evt.agent_id}`];
+        const agentName = agent ? agent.name : (evt.project ? `${evt.project}/${evt.agent_id}` : evt.agent_id);
+        const agentColor = agent ? agent.color : 'white';
+        const isSubagent = agent ? agent.is_subagent : false;
+        const totalTok = evt.input_tokens + evt.output_tokens;
+
+        const div = document.createElement('div');
+        div.className = 'chat-msg' + (totalTok > 0 ? ' has-tokens' : '');
+
+        const badge = CHAT_BADGES[evt.type] || '·';
+        const modBadge = isSubagent ? '🗡' : '';
+        const nameClass = `name-${agentColor}`;
+        const chatText = buildChatText(evt);
+        const tokenHtml = totalTok > 0 ? `<span class="token-badge">+${fmtTokens(totalTok)}</span>` : '';
+        const projectTag = evt.project ? `<span class="project-tag">${esc(evt.project)}</span>` : '';
+
+        div.innerHTML = `${projectTag}<span class="chat-badge">${badge}</span>`
+            + (modBadge ? `<span class="chat-badge">${modBadge}</span>` : '')
+            + `<span class="chat-name ${nameClass}">${esc(agentName)}</span>`
+            + `<span class="chat-text">${esc(chatText)}</span>`
+            + tokenHtml;
+
+        const expanded = document.createElement('div');
+        expanded.className = 'chat-expanded';
+        expanded.textContent = evt.content || '(no content)';
+
+        div.addEventListener('click', () => {
+            expanded.style.display = expanded.style.display === 'block' ? 'none' : 'block';
+        });
+
+        log.appendChild(div);
+        log.appendChild(expanded);
+    });
+
+    if (wasAtBottom) log.scrollTop = log.scrollHeight;
+
+    document.getElementById('event-count').textContent = `${s.events.length}`;
+    document.getElementById('viewer-list-count').textContent = `(${Object.keys(state.inventory).length})`;
+    document.getElementById('mod-count').textContent = `(${Object.keys(s.agents).length})`;
+    renderViewerCount();
+    renderViewers();
+}
+
+function connectMasterWS() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${proto}//${location.host}/ws/master`);
+    state.ws = ws;
+
+    const statusEl = document.getElementById('session-status');
+    const liveBadge = document.getElementById('live-badge');
+
+    ws.onopen = () => {
+        statusEl.className = 'conn-status connected';
+        statusEl.textContent = 'live';
+        liveBadge.style.display = 'inline';
+    };
+    ws.onclose = () => {
+        statusEl.className = 'conn-status';
+        statusEl.textContent = 'offline';
+        liveBadge.style.display = 'none';
+    };
+    ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'delta' && state.session && msg.events.length > 0) {
+            state.session.events.push(...msg.events);
+            // Merge agents
+            Object.assign(state.session.agents, msg.agents);
+            // Keep last 2000 events
+            if (state.session.events.length > 2000) {
+                state.session.events = state.session.events.slice(-2000);
+            }
+
+            // Trigger reaction from newest event
+            const lastEvt = msg.events[msg.events.length - 1];
+            triggerReaction(lastEvt.type);
+
+            const log = document.getElementById('event-log');
+            const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+            state.autoScroll = atBottom;
+
+            renderMasterChatLog(state.session);
+            renderMods(state.session);
+            renderDonationGoal();
+
+            if (!atBottom) {
+                const badge = document.getElementById('new-events-badge');
+                badge.textContent = `${msg.events.length} new`;
+                badge.style.display = 'inline';
+                badge.onclick = () => {
+                    log.scrollTop = log.scrollHeight;
+                    badge.style.display = 'none';
+                    state.autoScroll = true;
+                };
+            }
+        }
+    };
+}
+
+// Control room pixel art — manager watching a wall of monitors
+function startControlRoomAnimation(canvas) {
+    let frame = 0;
+    const id = canvas.dataset.animId || ('' + Math.random());
+    canvas.dataset.animId = id;
+    if (state.animFrames.has(id)) cancelAnimationFrame(state.animFrames.get(id));
+
+    function animate() {
+        drawControlRoom(canvas, frame);
+        frame++;
+        state.animFrames.set(id, requestAnimationFrame(animate));
+    }
+    animate();
+}
+
+function drawControlRoom(canvas, frame) {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    const px = 4;
+
+    // Dark room
+    ctx.fillStyle = '#060612';
+    ctx.fillRect(0, 0, w, h);
+
+    // Floor
+    ctx.fillStyle = '#12121e';
+    ctx.fillRect(0, h * 0.75, w, h * 0.25);
+
+    // Wall of monitors (3x2 grid)
+    const monColors = ['#003322', '#001a33', '#1a0033', '#0a1628', '#1a0a00', '#001a00'];
+    const codeColors = [
+        ['#00ff41', '#00cc33'], ['#ff6666', '#ff4444'], ['#6699ff', '#4488ff'],
+        ['#ffcc00', '#ff9900'], ['#ff66ff', '#ff44ff'], ['#66ffcc', '#44ffaa'],
+    ];
+
+    for (let row = 0; row < 2; row++) {
+        for (let col = 0; col < 3; col++) {
+            const mx = w * 0.08 + col * (w * 0.28);
+            const my = h * 0.05 + row * (h * 0.33);
+            const mw = w * 0.24;
+            const mh = h * 0.28;
+            const idx = row * 3 + col;
+
+            // Bezel
+            ctx.fillStyle = '#2c2c34';
+            ctx.fillRect(mx - 2, my - 2, mw + 4, mh + 4);
+            // Screen
+            ctx.fillStyle = monColors[idx % monColors.length];
+            ctx.fillRect(mx, my, mw, mh);
+            // Scanlines
+            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            for (let y = my; y < my + mh; y += 4) {
+                ctx.fillRect(mx, y, mw, 1);
+            }
+            // Code lines
+            const cc = codeColors[idx % codeColors.length];
+            const scroll = (frame * (0.3 + idx * 0.1)) % 20;
+            for (let r = 0; r < 5; r++) {
+                const ly = my + 4 + r * 6;
+                if (ly >= my + mh - 4) continue;
+                const lineSeed = (idx * 7 + r + Math.floor(scroll)) * 31;
+                const lineLen = Math.floor(mw / px) - 4;
+                ctx.fillStyle = cc[r % cc.length];
+                for (let c = 0; c < lineLen; c++) {
+                    if ((lineSeed + c * 13) % 100 < 25) continue;
+                    const cx = mx + 4 + c * (px - 1);
+                    if (cx + px > mx + mw - 4) break;
+                    ctx.fillRect(cx, ly, px - 2, px - 2);
+                }
+            }
+            // CRT glow
+            if (frame % (70 + idx * 11) < 2) {
+                ctx.fillStyle = 'rgba(255,255,255,0.03)';
+                ctx.fillRect(mx, my, mw, mh);
+            }
+        }
+    }
+
+    // Manager character — centered, sitting in chair
+    const charX = w * 0.44;
+    const charY = h * 0.75 - px;
+    const palette = { skin: '#ffcc99', hair: '#333355', shirt: '#9146ff', chair: '#252540' };
+
+    // Big comfy chair
+    ctx.fillStyle = '#1a1a3a';
+    ctx.fillRect(charX - px * 4, charY - px * 5, px * 18, px * 9);
+    ctx.fillStyle = '#252550';
+    ctx.fillRect(charX - px * 3, charY - px * 4, px * 16, px * 7);
+
+    // Body
+    ctx.fillStyle = palette.shirt;
+    ctx.fillRect(charX + px * 2, charY - px * 6, px * 6, px * 5);
+
+    // Head — slowly scanning left to right
+    const scanPhase = Math.sin(frame * 0.03) * px * 2;
+    ctx.fillStyle = palette.skin;
+    ctx.fillRect(charX + px * 3 + scanPhase, charY - px * 11, px * 4, px * 4);
+    ctx.fillStyle = palette.hair;
+    ctx.fillRect(charX + px * 3 + scanPhase, charY - px * 12, px * 4, px * 2);
+
+    // Eyes — looking at monitors
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(charX + px * 4 + scanPhase, charY - px * 9, px, px);
+    ctx.fillRect(charX + px * 6 + scanPhase, charY - px * 9, px, px);
+
+    // Arms resting on armrests
+    ctx.fillStyle = palette.skin;
+    ctx.fillRect(charX - px, charY - px * 3, px * 2, px * 2);
+    ctx.fillRect(charX + px * 9, charY - px * 3, px * 2, px * 2);
+
+    // Reaction overlays for master
+    const rx = state.reaction;
+    const rxActive = rx && rx.startFrame !== -1 && (frame - rx.startFrame) < rx.duration;
+    if (rxActive && rx.type === 'error') {
+        const p = (frame - rx.startFrame) / rx.duration;
+        if (p < 0.3) {
+            ctx.fillStyle = `rgba(255, 0, 0, ${0.15 * Math.sin(p * Math.PI / 0.3)})`;
+            ctx.fillRect(0, 0, w, h);
+        }
+    }
+    if (rxActive && rx.type === 'complete') {
+        drawCelebration(ctx, w, h, px, frame, rx.startFrame);
+    }
+
+    // Ambient glow from monitors
+    ctx.fillStyle = 'rgba(100, 130, 255, 0.03)';
+    ctx.fillRect(0, 0, w, h * 0.7);
 }
 
 // ============================================================
