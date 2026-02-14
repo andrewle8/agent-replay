@@ -1817,6 +1817,23 @@ function renderDonationGoal() {
 // CHAT LOG (Event log as Twitch chat)
 // ============================================================
 
+// Distinct colors for projects in master channel view
+const PROJECT_COLORS = [
+    '#81d4fa', '#e879a8', '#f0c674', '#a5d6a7', '#ef5350',
+    '#64b5f6', '#ffb74d', '#bf94ff', '#4dd0e1', '#ff8a65',
+    '#aed581', '#ce93d8', '#90caf9', '#fff176',
+];
+const _projectColorMap = {};
+let _projectColorIdx = 0;
+function getProjectColor(project) {
+    if (!project) return null;
+    if (!_projectColorMap[project]) {
+        _projectColorMap[project] = PROJECT_COLORS[_projectColorIdx % PROJECT_COLORS.length];
+        _projectColorIdx++;
+    }
+    return _projectColorMap[project];
+}
+
 function appendChatMessage(log, evt, s, isMaster) {
     if (evt.file_path) {
         const sp = evt.short_path || evt.file_path;
@@ -1835,18 +1852,22 @@ function appendChatMessage(log, evt, s, isMaster) {
     const isSubagent = agent ? agent.is_subagent : false;
     const totalTok = evt.input_tokens + evt.output_tokens;
 
+    // In master mode, override color per-project so each project is visually distinct
+    const projColor = isMaster ? getProjectColor(evt.project) : null;
+
     const div = document.createElement('div');
     div.className = 'chat-msg' + (totalTok > 0 ? ' has-tokens' : '');
 
     const badge = CHAT_BADGES[evt.type] || '·';
     const modBadge = isSubagent ? '🗡' : '';
-    const nameClass = `name-${agentColor}`;
+    const nameClass = projColor ? '' : `name-${agentColor}`;
+    const nameStyle = projColor ? ` style="color:${projColor}"` : '';
     const chatText = buildChatText(evt);
     const tokenHtml = totalTok > 0 ? `<span class="token-badge">+${fmtTokens(totalTok)}</span>` : '';
 
     div.innerHTML = `<span class="chat-badge">${badge}</span>`
         + (modBadge ? `<span class="chat-badge">${modBadge}</span>` : '')
-        + `<span class="chat-name ${nameClass}">${esc(agentName)}</span>`
+        + `<span class="chat-name ${nameClass}"${nameStyle}>${esc(agentName)}</span>`
         + `<span class="chat-text">${esc(chatText)}</span>`
         + tokenHtml;
 
@@ -1914,9 +1935,12 @@ function renderMods(s) {
         const total = a.input_tokens + a.output_tokens;
         const tokStr = total > 0 ? fmtTokens(total) + ' tok' : '';
         const badge = a.is_subagent ? '🗡' : '👑';
+        const projColor = a.project ? getProjectColor(a.project) : null;
+        const nameClass = projColor ? '' : `name-${a.color}`;
+        const nameStyle = projColor ? ` style="color:${projColor}"` : '';
         return `<div class="mod-entry">
             <span class="mod-badge">${badge}</span>
-            <span class="mod-name name-${a.color}">${esc(a.name)}</span>
+            <span class="mod-name ${nameClass}"${nameStyle}>${esc(a.name)}</span>
             <span class="mod-tokens">${tokStr}</span>
         </div>`;
     }).join('');
