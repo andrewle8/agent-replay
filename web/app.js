@@ -2318,18 +2318,22 @@ async function fetchViewerChatBatch() {
     if (viewerChatFetching || !state.sessionFilePath) return;
     viewerChatFetching = true;
     try {
-        // Fetch messages to build a buffer ahead of consumption
+        // Fire all requests in parallel so the buffer fills in one LLM round-trip
         const bufSize = state.tuning.bufferSize || 10;
-        for (let i = 0; i < bufSize; i++) {
-            const resp = await fetch('/api/viewer-chat/' + encodeURIComponent(state.sessionFilePath));
-            if (!resp.ok) break;
-            const data = await resp.json();
+        const url = '/api/viewer-chat/' + encodeURIComponent(state.sessionFilePath);
+        const results = await Promise.allSettled(
+            Array.from({ length: bufSize }, () => fetch(url).then(r => r.ok ? r.json() : null))
+        );
+        let hadError = false;
+        for (const r of results) {
+            if (r.status !== 'fulfilled' || !r.value) continue;
+            const data = r.value;
             if (data.name && data.message) {
                 viewerChatQueue.push(data);
-                llmFallbackShown = false; // LLM recovered
-            } else {
-                if (data.llm_error) showLlmFallbackNotice(data.llm_error);
-                break; // empty response = no LLM available
+                llmFallbackShown = false;
+            } else if (data.llm_error && !hadError) {
+                showLlmFallbackNotice(data.llm_error);
+                hadError = true;
             }
         }
     } catch (e) {
@@ -2356,7 +2360,7 @@ function addViewerChatMessage() {
         name = item.name;
         msg = item.message;
         // Refill when running low (start early so LLM has time)
-        if (viewerChatQueue.length <= 3) fetchViewerChatBatch();
+        if (viewerChatQueue.length <= Math.floor((state.tuning.bufferSize || 10) / 2)) fetchViewerChatBatch();
     } else {
         // Fallback — pick from event-specific pool, prefer dynamic context-aware messages
         name = VIEWER_NAMES[Math.floor(Math.random() * VIEWER_NAMES.length)];
