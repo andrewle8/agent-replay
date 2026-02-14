@@ -345,11 +345,10 @@ let _previousProvider = 'ollama';
 
     async function sendMessage() {
         const msg = input.value.trim();
-        if (!msg || !state.llmEnabled) return;
+        if (!msg || !state.llmEnabled || sendBtn.disabled) return;
 
         const log = document.getElementById('viewer-log') || document.getElementById('event-log');
         input.value = '';
-        input.disabled = true;
         sendBtn.disabled = true;
 
         // Add user message to chat
@@ -407,10 +406,9 @@ let _previousProvider = 'ollama';
             log.appendChild(errDiv);
             updateViewerCount();
         } finally {
-            // Always re-enable input
+            // Always re-enable send
             state.replyToEventIndex = null;
             if (replyPreview) replyPreview.style.display = 'none';
-            input.disabled = false;
             input.placeholder = 'Ask about this stream...';
             input.classList.remove('thinking');
             sendBtn.disabled = false;
