@@ -502,26 +502,20 @@ def main(args: list[str] | None = None) -> None:
     if args is None:
         args = sys.argv[1:]
 
-    live_mode = "--live" in args or "--watch" in args
-    args = [a for a in args if a not in ("--live", "--watch")]
+    # --no-live disables live mode (on by default)
+    no_live = "--no-live" in args
+    args = [a for a in args if a not in ("--live", "--watch", "--no-live")]
 
+    # Strip --latest (it's the default when no file given)
     if "--latest" in args:
         args.remove("--latest")
-        latest = _find_latest_transcript()
-        if latest:
-            args = [str(latest)] + args
-        else:
-            print("Error: no transcripts found in ~/.claude/projects/")
-            sys.exit(1)
 
-    if not args or args[0] in ("-h", "--help"):
-        print("Usage: agent-replay <transcript.jsonl>")
-        print("       agent-replay --latest")
-        print("       agent-replay --latest --live")
+    if args and args[0] in ("-h", "--help"):
+        print("Usage: agent-replay [transcript.jsonl]")
         print("\nReplay Claude Code sessions as animated TUI scenes.")
+        print("With no arguments, replays the most recent session in live mode.")
         print("\nOptions:")
-        print("  --latest   Auto-find the most recent transcript")
-        print("  --live     Watch mode: re-read file for new events (live sessions)")
+        print("  --no-live  Disable live reload (replay only, don't watch for new events)")
         print("\nControls:")
         print("  SPACE    play/pause")
         print("  1-4      speed multiplier")
@@ -529,18 +523,31 @@ def main(args: list[str] | None = None) -> None:
         print("  q        quit")
         sys.exit(0)
 
+    # Default to latest transcript if no file given
+    if not args:
+        latest = _find_latest_transcript()
+        if latest:
+            args = [str(latest)]
+        else:
+            print("Error: no transcripts found in ~/.claude/projects/")
+            print("Usage: agent-replay [transcript.jsonl]")
+            sys.exit(1)
+
     file_path = Path(args[0]).expanduser().resolve()
     if not file_path.exists():
         print(f"Error: file not found: {file_path}")
         sys.exit(1)
 
+    live_mode = not no_live
+
     console = Console()
     console.print(f"[dim]Loading {file_path.name}...[/dim]")
 
     session = parse(file_path)
+    mode_label = "live" if live_mode else "replay"
     console.print(
         f"[dim]Parsed {len(session.events)} events, "
-        f"{len(session.agents)} agent(s)[/dim]"
+        f"{len(session.agents)} agent(s) [{mode_label}][/dim]"
     )
 
     tui = ReplayTUI(session, live_file=file_path if live_mode else None)
