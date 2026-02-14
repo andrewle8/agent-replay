@@ -11,6 +11,10 @@ import httpx
 
 log = logging.getLogger(__name__)
 
+# Appended to Ollama user prompts to disable internal reasoning (Qwen3, Cogito).
+# Kept off for generate_interactive_reply where thinking improves quality.
+_NO_THINK = " /no_think"
+
 STREAMER_NAMES = [
     "the coder", "our code monkey", "the engineer",
     "master coder", "the dev", "chief architect",
@@ -118,7 +122,7 @@ async def generate_viewer_messages(context: str, count: int = 5) -> list[str]:
         if LLM_PROVIDER == "openai":
             return await _call_openai(user_prompt, system, count=count)
         else:
-            return await _call_ollama(user_prompt, system, count=count)
+            return await _call_ollama(user_prompt + _NO_THINK, system, count=count)
     except Exception:
         log.debug("LLM call failed", exc_info=True)
         return []
@@ -173,7 +177,7 @@ async def generate_narrator_messages(context: str, count: int = 3) -> list[str]:
         if LLM_PROVIDER == "openai":
             return await _call_openai(user_prompt, SYSTEM_PROMPT_NARRATOR, count=count)
         else:
-            return await _call_ollama(user_prompt, SYSTEM_PROMPT_NARRATOR, count=count)
+            return await _call_ollama(user_prompt + _NO_THINK, SYSTEM_PROMPT_NARRATOR, count=count)
     except Exception:
         log.debug("Narrator LLM call failed", exc_info=True)
         return []
@@ -196,7 +200,7 @@ async def generate_viewer_reaction(user_message: str) -> list[str]:
         if LLM_PROVIDER == "openai":
             return await _call_openai(user_prompt, SYSTEM_PROMPT_REACT, count=2)
         else:
-            return await _call_ollama(user_prompt, SYSTEM_PROMPT_REACT, count=2)
+            return await _call_ollama(user_prompt + _NO_THINK, SYSTEM_PROMPT_REACT, count=2)
     except Exception:
         log.debug("Viewer reaction LLM call failed", exc_info=True)
         return []

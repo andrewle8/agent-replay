@@ -51,6 +51,10 @@ The character reacts to agent events in real-time:
 - **User** — wave at camera, speech bubble
 - **Bash** — lightning bolt above keyboard
 
+### Code Overlay
+
+When agent events occur, a code preview panel appears in the top-right corner showing the event type (color-coded), file path or command, and a code snippet or command output. Auto-hides after a few seconds.
+
 ### Chat Sidebar
 
 The event log is styled as a Twitch chat. Every agent action (file edits, bash commands, tool calls, etc.) appears as a chat message with type-specific badges and colored names. Click any message to expand and see the full content. Click "Ask about this" to ask the LLM about a specific event.
@@ -75,13 +79,17 @@ A play-by-play commentator (`caster_bot`) provides esports-style narration every
 
 Auto-generated from recent agent activity. Scans the last 5 events to detect the dominant activity type (Coding, Terminal, Planning, Research) and programming language (from file extensions), combined with the branch name. Updates live as new events arrive. Example: `Coding · Python · main`.
 
+#### Reasoning Control
+
+For Ollama models that support `/no_think` (Qwen3, Cogito), viewer chat, narrator, and reaction prompts automatically disable internal reasoning to reduce latency. Interactive chat keeps thinking enabled for higher quality explanations.
+
 #### LLM Configuration
 
 Configure via CLI flags or the settings gear icon:
 
 ```bash
 # Ollama (default, local)
-agent-replay --llm ollama --ollama-model mistral-small3.2
+agent-replay --llm ollama --ollama-model qwen3:14b
 
 # OpenAI
 agent-replay --llm openai --openai-key sk-... --openai-model gpt-4o-mini
@@ -145,6 +153,7 @@ web/
 | `GET /api/ollama-models` | List locally available Ollama models |
 | `POST /api/chat` | Interactive chat (ask about agent activity) |
 | `GET /api/viewer-chat/{id}` | Get a generated viewer chat message |
+| `POST /api/viewer-react` | Generate viewer reactions to a user chat message |
 | `GET /api/narrator/{id}` | Get a narrator commentary message |
 | `WS /ws/session/{id}` | Live event stream for a session |
 | `WS /ws/master` | Live event stream for all active sessions |

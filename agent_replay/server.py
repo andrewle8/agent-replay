@@ -601,7 +601,7 @@ def main(args: list[str] | None = None) -> None:
             print("  --public           Redact secrets, API keys, and full paths")
             print("  --llm PROVIDER     LLM for viewer chat: ollama or openai (env: AGENTSTV_LLM)")
             print("  --ollama-url URL   Ollama server URL (default: http://localhost:11434)")
-            print("  --ollama-model M   Ollama model name (default: mistral-small3.2)")
+            print("  --ollama-model M   Ollama model name (default: qwen3:14b)")
             print("  --openai-key KEY   OpenAI API key (env: AGENTSTV_OPENAI_KEY)")
             print("  --openai-model M   OpenAI model name (default: gpt-4o-mini)")
             sys.exit(0)

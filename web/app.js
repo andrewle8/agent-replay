@@ -106,7 +106,7 @@ async function openSettings() {
         document.getElementById('s-openai-key').placeholder = cfg.openai_key || 'sk-…';
         document.getElementById('s-openai-model').value = cfg.openai_model || '';
         // Fetch available Ollama models for the dropdown
-        await populateOllamaModels(cfg.ollama_model || 'mistral-small3.2');
+        await populateOllamaModels(cfg.ollama_model || 'qwen3:14b');
         toggleProviderFields();
     } catch (e) {
         document.getElementById('settings-msg').textContent = 'Failed to load settings';
