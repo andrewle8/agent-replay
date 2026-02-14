@@ -431,6 +431,29 @@ class ReplayTUI:
             border_style="bright_black",
         )
 
+    def _elapsed_str(self) -> str:
+        """Return elapsed time from session start to current event."""
+        events = self.session.events
+        if not events or self.current_idx == 0:
+            return ""
+        try:
+            from datetime import datetime
+
+            t0 = datetime.fromisoformat(events[0].timestamp.replace("Z", "+00:00"))
+            cur = self.current_idx - 1
+            t1 = datetime.fromisoformat(events[cur].timestamp.replace("Z", "+00:00"))
+            delta = t1 - t0
+            total_secs = int(delta.total_seconds())
+            if total_secs < 0:
+                return ""
+            mins, secs = divmod(total_secs, 60)
+            hrs, mins = divmod(mins, 60)
+            if hrs > 0:
+                return f"{hrs}h{mins:02d}m{secs:02d}s"
+            return f"{mins}m{secs:02d}s"
+        except (ValueError, IndexError):
+            return ""
+
     def _render_status(self) -> Panel:
         """Render the playback status bar."""
         total = len(self.session.events)
@@ -454,6 +477,11 @@ class ReplayTUI:
         text.append(f"] {pct}", style="dim")
         text.append(f"   {self.speed}x", style="bold yellow")
         text.append(f"   {current}/{total}", style="dim white")
+
+        # Time elapsed from first event to current event
+        elapsed = self._elapsed_str()
+        if elapsed:
+            text.append(f"   {elapsed}", style="dim cyan")
 
         # Floating token costs (recent)
         for appear_idx, tok, color in self.floating_tokens:
