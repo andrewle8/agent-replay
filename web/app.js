@@ -132,7 +132,7 @@ async function openSettings() {
         document.getElementById('s-openai-key').placeholder = cfg.openai_key || 'sk-…';
         document.getElementById('s-openai-model').value = cfg.openai_model || '';
         // Fetch available Ollama models for the dropdown
-        await populateOllamaModels(cfg.ollama_model || 'qwen3:14b');
+        await populateOllamaModels(cfg.ollama_model || '');
         toggleProviderFields();
         // Populate tuning fields
         const t = state.tuning;
@@ -159,14 +159,18 @@ async function populateOllamaModels(currentModel) {
         const resp = await fetch('/api/ollama-models');
         const data = await resp.json();
         if (data.models && data.models.length > 0) {
-            select.innerHTML = data.models.map(m =>
+            let opts = data.models.map(m =>
                 `<option value="${esc(m)}"${m === currentModel ? ' selected' : ''}>${esc(m)}</option>`
             ).join('');
+            // If no model configured yet, add a prompt option
+            if (!currentModel) {
+                opts = '<option value="" disabled selected>— select a model —</option>' + opts;
+            }
             // If current model isn't in the list, add it
             if (currentModel && !data.models.includes(currentModel)) {
-                select.insertAdjacentHTML('afterbegin',
-                    `<option value="${esc(currentModel)}" selected>${esc(currentModel)}</option>`);
+                opts = `<option value="${esc(currentModel)}" selected>${esc(currentModel)}</option>` + opts;
             }
+            select.innerHTML = opts;
             select.style.display = '';
             fallback.style.display = 'none';
         } else {
@@ -223,9 +227,9 @@ function _updateModelLabel(label, cfg) {
     if (cfg.provider === 'off') {
         label.textContent = 'off';
     } else if (cfg.provider === 'openai') {
-        label.textContent = cfg.openai_model || 'openai';
+        label.textContent = cfg.openai_model || 'not set';
     } else {
-        label.textContent = cfg.ollama_model || 'ollama';
+        label.textContent = cfg.ollama_model || 'not set';
     }
     label.title = 'Active LLM: ' + label.textContent;
 }
@@ -274,6 +278,11 @@ async function saveSettings(e) {
         }
         msg.textContent = 'Saved';
         msg.className = 'settings-msg ok';
+        // Show loading hint when model changes (first LLM call may take time to load)
+        if (state.llmEnabled) {
+            const label = document.getElementById('llm-model-label');
+            if (label) { label.textContent = 'loading...'; label.title = 'Model is loading — first response may take a moment'; }
+        }
         setTimeout(closeSettings, 800);
     } catch (e) {
         msg.textContent = 'Error saving settings';
@@ -310,6 +319,9 @@ async function saveSettings(e) {
     fetch('/api/settings').then(r => r.json()).then(cfg => {
         state.llmEnabled = cfg.provider !== 'off';
         syncLlmToggleUI(cfg);
+        // Auto-open settings if no model is configured yet
+        const needsSetup = cfg.provider === 'ollama' ? !cfg.ollama_model : cfg.provider === 'openai' ? !cfg.openai_model : false;
+        if (needsSetup) openSettings();
     }).catch(() => {});
 })();
 
@@ -2387,15 +2399,24 @@ async function fetchViewerChatBatch() {
             Array.from({ length: bufSize }, () => fetch(url).then(r => r.ok ? r.json() : null))
         );
         let hadError = false;
+        let gotMessages = false;
         for (const r of results) {
             if (r.status !== 'fulfilled' || !r.value) continue;
             const data = r.value;
             if (data.name && data.message) {
                 viewerChatQueue.push(data);
                 llmFallbackShown = false;
+                gotMessages = true;
             } else if (data.llm_error && !hadError) {
                 showLlmFallbackNotice(data.llm_error);
                 hadError = true;
+            }
+        }
+        // Clear "loading..." label once model responds
+        if (gotMessages) {
+            const label = document.getElementById('llm-model-label');
+            if (label && label.textContent === 'loading...') {
+                fetch('/api/settings').then(r => r.json()).then(c => _updateModelLabel(label, c)).catch(() => {});
             }
         }
     } catch (e) {

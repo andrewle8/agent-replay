@@ -70,7 +70,7 @@ SYSTEM_PROMPT_REACT = (
 # Provider config — set via env vars or CLI flags
 LLM_PROVIDER: str = os.environ.get("AGENTSTV_LLM", "ollama")
 OLLAMA_URL: str = os.environ.get("AGENTSTV_OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL: str = os.environ.get("AGENTSTV_OLLAMA_MODEL", "qwen3:14b")
+OLLAMA_MODEL: str = os.environ.get("AGENTSTV_OLLAMA_MODEL", "")
 OPENAI_KEY: str = os.environ.get("AGENTSTV_OPENAI_KEY", "")
 OPENAI_MODEL: str = os.environ.get("AGENTSTV_OPENAI_MODEL", "gpt-4o-mini")
 
@@ -96,6 +96,15 @@ def configure(
         OPENAI_MODEL = openai_model
 
 
+def is_ready() -> bool:
+    """Return True if the LLM is configured and usable."""
+    if LLM_PROVIDER == "off":
+        return False
+    if LLM_PROVIDER == "openai":
+        return bool(OPENAI_KEY and OPENAI_MODEL)
+    return bool(OLLAMA_MODEL)
+
+
 def get_settings() -> dict:
     """Return current LLM configuration (OpenAI key is masked)."""
     masked_key = ""
@@ -117,7 +126,7 @@ async def generate_viewer_messages(
 
     Returns (messages, error_string).  error_string is empty on success.
     """
-    if LLM_PROVIDER == "off":
+    if not is_ready():
         return [], ""
 
     name = _random_streamer()
@@ -148,7 +157,7 @@ async def generate_interactive_reply(
 
     Returns a string reply, or empty string on failure / LLM off.
     """
-    if LLM_PROVIDER == "off":
+    if not is_ready():
         return ""
 
     user_prompt = (
@@ -174,7 +183,7 @@ async def generate_narrator_messages(context: str, count: int = 3) -> list[str]:
 
     Returns a list of strings, or an empty list on failure.
     """
-    if LLM_PROVIDER == "off":
+    if not is_ready():
         return []
 
     name = _random_streamer()
@@ -198,7 +207,7 @@ async def generate_viewer_reaction(user_message: str) -> list[str]:
 
     Returns a list of strings, or an empty list on failure.
     """
-    if LLM_PROVIDER == "off":
+    if not is_ready():
         return []
 
     user_prompt = (

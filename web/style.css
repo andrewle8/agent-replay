@@ -979,6 +979,12 @@ select.settings-input { cursor: pointer; }
 }
 .settings-msg.ok { color: var(--green); }
 .settings-msg.err { color: var(--red-soft); }
+.settings-hint {
+    font-size: 11px;
+    color: var(--text-dim);
+    opacity: 0.7;
+    margin-top: 4px;
+}
 
 /* === CHAT INPUT BAR === */
 .chat-input-bar {

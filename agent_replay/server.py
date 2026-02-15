@@ -634,7 +634,7 @@ def main(args: list[str] | None = None) -> None:
             print("  --public           Redact secrets, API keys, and full paths")
             print("  --llm PROVIDER     LLM for viewer chat: ollama or openai (env: AGENTSTV_LLM)")
             print("  --ollama-url URL   Ollama server URL (default: http://localhost:11434)")
-            print("  --ollama-model M   Ollama model name (default: qwen3:14b)")
+            print("  --ollama-model M   Ollama model name (no default — choose in UI)")
             print("  --openai-key KEY   OpenAI API key (env: AGENTSTV_OPENAI_KEY)")
             print("  --openai-model M   OpenAI model name (default: gpt-4o-mini)")
             sys.exit(0)
@@ -666,7 +666,11 @@ def main(args: list[str] | None = None) -> None:
     print(f"agent-replay v{__version__} — starting at {url}{mode}")
 
     # LLM health check
-    if llm.LLM_PROVIDER != "off":
+    if llm.LLM_PROVIDER == "off":
+        pass  # user chose off explicitly
+    elif not llm.is_ready():
+        print("  LLM: no model configured — choose one in the web UI settings")
+    else:
         try:
             import httpx as _hx
             r = _hx.get(f"{llm.OLLAMA_URL}/api/tags", timeout=3.0)
