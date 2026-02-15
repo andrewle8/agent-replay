@@ -1122,6 +1122,15 @@ select.settings-input { cursor: pointer; }
     color: var(--text);
 }
 
+/* LLM loading notice */
+.chat-msg.llm-loading-notice {
+    border-left: 3px solid var(--purple);
+    padding-left: 11px;
+    background: rgba(145, 70, 255, 0.06);
+    font-size: 11px;
+    animation: thinkingPulse 1.5s ease-in-out infinite;
+}
+
 /* LLM fallback notice */
 .chat-msg.llm-fallback-notice {
     border-left: 3px solid #e74c3c;

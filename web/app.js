@@ -2379,6 +2379,23 @@ async function addNarratorMessage() {
 const viewerChatQueue = [];
 let viewerChatFetching = false;
 let llmFallbackShown = false;
+let llmLoadingEl = null;
+
+function showLlmLoadingNotice() {
+    if (llmLoadingEl) return;
+    const log = getViewerLog();
+    if (!log) return;
+    llmLoadingEl = document.createElement('div');
+    llmLoadingEl.className = 'chat-msg llm-loading-notice';
+    llmLoadingEl.innerHTML = `<span class="chat-badge">🧠</span>`
+        + `<span class="chat-text" style="color:var(--text-dim);font-style:italic">Loading LLM model\u2026 first message may take a moment</span>`;
+    log.appendChild(llmLoadingEl);
+    if (state.viewerAutoScroll) log.scrollTop = log.scrollHeight;
+}
+
+function hideLlmLoadingNotice() {
+    if (llmLoadingEl) { llmLoadingEl.remove(); llmLoadingEl = null; }
+}
 
 function showLlmFallbackNotice(error) {
     if (llmFallbackShown) return;
@@ -2399,6 +2416,8 @@ function showLlmFallbackNotice(error) {
 async function fetchViewerChatBatch() {
     if (viewerChatFetching || !state.sessionFilePath) return;
     viewerChatFetching = true;
+    // Show loading notice on first fetch when queue is empty
+    if (viewerChatQueue.length === 0) showLlmLoadingNotice();
     try {
         // Fire all requests in parallel so the buffer fills in one LLM round-trip
         const bufSize = state.tuning.bufferSize || 10;
@@ -2420,14 +2439,17 @@ async function fetchViewerChatBatch() {
                 hadError = true;
             }
         }
-        // Clear "loading..." label once model responds
+        // Clear loading notices once model responds
         if (gotMessages) {
+            hideLlmLoadingNotice();
             const label = document.getElementById('llm-model-label');
             if (label && label.textContent === 'loading...') {
                 fetch('/api/settings').then(r => r.json()).then(c => _updateModelLabel(label, c)).catch(() => {});
             }
         }
+        if (hadError) hideLlmLoadingNotice();
     } catch (e) {
+        hideLlmLoadingNotice();
         showLlmFallbackNotice(e.message || 'Network error');
     }
     viewerChatFetching = false;
