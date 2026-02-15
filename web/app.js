@@ -102,6 +102,7 @@ let state = {
     viewerAutoScroll: true,
     viewerMsgCount: 0,
     agentMsgCount: 0,
+    chatSplit: false,
     // Master channel state
     masterEvents: [],
     masterAgents: {},
@@ -383,7 +384,7 @@ let _previousProvider = 'ollama';
         const msg = input.value.trim();
         if (!msg || !state.llmEnabled || sendBtn.disabled) return;
 
-        const log = document.getElementById('viewer-log') || document.getElementById('event-log');
+        const log = getViewerLog();
         input.value = '';
         sendBtn.disabled = true;
 
@@ -1972,14 +1973,21 @@ async function showSessionView(filePath) {
     document.getElementById('session-view').style.display = 'flex';
 
     document.getElementById('back-btn').onclick = () => navigate('#/');
+
+    // Init chat mode from localStorage
+    try { state.chatSplit = localStorage.getItem('agenttv_chatSplit') === '1'; } catch {}
+    document.getElementById('chat-log').innerHTML = '';
     document.getElementById('event-log').innerHTML = '';
     const viewerLogInit = document.getElementById('viewer-log');
-    if (viewerLogInit) viewerLogInit.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Connecting to stream…</div>';
+    if (viewerLogInit) viewerLogInit.innerHTML = '';
+    applyChatMode();
+    getViewerLog().innerHTML = '<div style="padding:20px;color:var(--text-muted)">Connecting to stream…</div>';
     const vcc = document.getElementById('viewer-chat-count'); if (vcc) vcc.textContent = '';
     const alc = document.getElementById('agent-log-count'); if (alc) alc.textContent = '';
 
     setupActions(filePath);
 
+    document.getElementById('split-chat-btn').onclick = toggleChatSplit;
     document.getElementById('filter-toggle-btn').onclick = () => {
         const panel = document.getElementById('filters-panel');
         panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
@@ -2005,7 +2013,7 @@ async function showSessionView(filePath) {
         const resp = await fetch('/api/session/' + encodeURIComponent(filePath));
         const data = await resp.json();
         if (data.error) {
-            (document.getElementById('viewer-log') || document.getElementById('event-log')).innerHTML = `<div style="padding:20px;color:var(--text-muted)">${esc(data.error)}</div>`;
+            getViewerLog().innerHTML = `<div style="padding:20px;color:var(--text-muted)">${esc(data.error)}</div>`;
             return;
         }
         state.session = data;
@@ -2020,7 +2028,7 @@ async function showSessionView(filePath) {
         syncLlmToggleUI();
         if (state.llmEnabled) startViewerChat();
     } catch (e) {
-        (document.getElementById('viewer-log') || document.getElementById('event-log')).innerHTML = `<div style="padding:20px;color:var(--text-muted)">Failed to connect to stream</div>`;
+        getViewerLog().innerHTML = `<div style="padding:20px;color:var(--text-muted)">Failed to connect to stream</div>`;
     }
 }
 
@@ -2069,7 +2077,7 @@ function setupActions(filePath) {
 }
 
 function addTipToChat(amount) {
-    const log = document.getElementById('viewer-log') || document.getElementById('event-log');
+    const log = getViewerLog();
     const names = ['viewer_42', 'code_fan99', 'pixel_dev', 'stream_lurker', 'bug_hunter',
                    'git_pusher', 'regex_queen', 'null_ptr', 'sudo_user', 'mr_merge'];
     const name = names[Math.floor(Math.random() * names.length)];
@@ -2345,7 +2353,7 @@ function stopNarratorChat() {
 }
 
 async function addNarratorMessage() {
-    const log = document.getElementById('viewer-log') || document.getElementById('event-log');
+    const log = getViewerLog();
     if (!log || !state.sessionFilePath) return;
 
     try {
@@ -2375,7 +2383,7 @@ let llmFallbackShown = false;
 function showLlmFallbackNotice(error) {
     if (llmFallbackShown) return;
     llmFallbackShown = true;
-    const log = document.getElementById('viewer-log') || document.getElementById('event-log');
+    const log = getViewerLog();
     if (!log) return;
     const div = document.createElement('div');
     div.className = 'chat-msg llm-fallback-notice';
@@ -2426,7 +2434,7 @@ async function fetchViewerChatBatch() {
 }
 
 function addViewerChatMessage() {
-    const log = document.getElementById('viewer-log') || document.getElementById('event-log');
+    const log = getViewerLog();
     if (!log) return;
 
     // Chance of a random viewer tip instead of a chat message
@@ -2498,7 +2506,7 @@ function addViewerChatMessage() {
 }
 
 function addRandomViewerTip() {
-    const log = document.getElementById('viewer-log') || document.getElementById('event-log');
+    const log = getViewerLog();
     const amounts = [100, 100, 100, 250, 500, 500, 1000, 2500];
     const amount = amounts[Math.floor(Math.random() * amounts.length)];
     const name = VIEWER_NAMES[Math.floor(Math.random() * VIEWER_NAMES.length)];
@@ -2553,7 +2561,7 @@ function reactToUserChat(userMessage) {
     // Configurable chance of firing
     if (Math.random() > (state.tuning.reactionChance || 50) / 100) return;
 
-    const log = document.getElementById('viewer-log') || document.getElementById('event-log');
+    const log = getViewerLog();
     if (!log) return;
 
     const colors = ['#9146ff', '#00b4d8', '#f0c674', '#00e676', '#ff6b6b', '#81d4fa', '#e74c3c', '#8abeb7'];
@@ -2644,7 +2652,7 @@ function renderSession() {
     renderDonationGoal();
     renderChatLog(s);
     renderMods(s);
-    renderViewers();
+    renderFiles();
 }
 
 function renderViewerCount() {
@@ -2673,6 +2681,50 @@ function renderDonationGoal() {
 // ============================================================
 // CHAT LOG (Event log as Twitch chat)
 // ============================================================
+
+// Chat mode helpers — combined (default) vs split
+function getViewerLog() {
+    if (!state.chatSplit) return document.getElementById('chat-log');
+    return document.getElementById('viewer-log');
+}
+
+function getAgentLog() {
+    if (!state.chatSplit) return document.getElementById('chat-log');
+    return document.getElementById('event-log');
+}
+
+function toggleChatSplit() {
+    state.chatSplit = !state.chatSplit;
+    try { localStorage.setItem('agenttv_chatSplit', state.chatSplit ? '1' : '0'); } catch {}
+    applyChatMode();
+    if (state.session) {
+        if (state.view === 'master') renderMasterChatLog(state.session);
+        else renderChatLog(state.session);
+    }
+}
+
+function applyChatMode() {
+    const chatLog = document.getElementById('chat-log');
+    const viewerPane = document.querySelector('.viewer-pane');
+    const agentPane = document.querySelector('.agent-pane');
+    const divider = document.querySelector('.chat-pane-divider');
+    const splitBtn = document.getElementById('split-chat-btn');
+
+    if (state.chatSplit) {
+        if (chatLog) chatLog.style.display = 'none';
+        if (viewerPane) viewerPane.style.display = '';
+        if (agentPane) agentPane.style.display = '';
+        if (divider) divider.style.display = '';
+        if (splitBtn) { splitBtn.title = 'Combine chat'; splitBtn.classList.add('active'); }
+        setupDividerDrag();
+    } else {
+        if (chatLog) chatLog.style.display = '';
+        if (viewerPane) viewerPane.style.display = 'none';
+        if (agentPane) agentPane.style.display = 'none';
+        if (divider) divider.style.display = 'none';
+        if (splitBtn) { splitBtn.title = 'Split chat'; splitBtn.classList.remove('active'); }
+    }
+}
 
 // Distinct colors for projects in master channel view
 const PROJECT_COLORS = [
@@ -2759,20 +2811,23 @@ function appendChatMessage(log, evt, s, isMaster, evtIndex) {
 
 function updateChatCounters(s) {
     document.getElementById('event-count').textContent = `${s.events.length}`;
-    document.getElementById('viewer-list-count').textContent = `(${Object.keys(state.inventory).length})`;
-    document.getElementById('mod-count').textContent = `(${Object.keys(s.agents).length})`;
+    const filesCount = document.getElementById('files-count');
+    if (filesCount) filesCount.textContent = `(${Object.keys(state.inventory).length})`;
     updateAgentCount();
     updateViewerCount();
     renderViewerCount();
-    renderViewers();
+    renderFiles();
 }
 
 function renderChatLog(s) {
-    const log = document.getElementById('event-log');
-    const viewerLog = document.getElementById('viewer-log');
+    const log = getAgentLog();
     const wasAtBottom = state.autoScroll;
     log.innerHTML = '';
-    if (viewerLog) viewerLog.innerHTML = '';
+    // In split mode, also clear the other pane; in combined, chat-log covers both
+    if (state.chatSplit) {
+        const viewerLog = document.getElementById('viewer-log');
+        if (viewerLog) viewerLog.innerHTML = '';
+    }
     state.inventory = {};
 
     let lastEvent = null;
@@ -2811,24 +2866,27 @@ function renderMods(s) {
     const panel = document.getElementById('agents-panel');
     panel.innerHTML = Object.values(s.agents).map(a => {
         const total = a.input_tokens + a.output_tokens;
-        const tokStr = total > 0 ? fmtTokens(total) + ' tok' : '';
+        const tokStr = total > 0 ? fmtTokens(total) : '';
         const badge = a.is_subagent ? '🗡' : '👑';
         const projColor = a.project ? getProjectColor(a.project) : null;
         const nameClass = projColor ? '' : `name-${a.color}`;
         const nameStyle = projColor ? ` style="color:${projColor}"` : '';
-        return `<div class="mod-entry">
+        return `<div class="mod-pill">
             <span class="mod-badge">${badge}</span>
             <span class="mod-name ${nameClass}"${nameStyle}>${esc(a.name)}</span>
-            <span class="mod-tokens">${tokStr}</span>
+            ${tokStr ? `<span class="mod-tokens">${tokStr}</span>` : ''}
         </div>`;
     }).join('');
 }
 
-function renderViewers() {
-    const panel = document.getElementById('inventory-panel');
+function renderFiles() {
+    const panel = document.getElementById('files-panel');
+    if (!panel) return;
     const entries = Object.entries(state.inventory);
+    const countEl = document.getElementById('files-count');
+    if (countEl) countEl.textContent = `(${entries.length})`;
     if (!entries.length) {
-        panel.innerHTML = '<div style="color:var(--text-muted);font-size:11px;padding:4px 0">No viewers yet</div>';
+        panel.innerHTML = '<div style="color:var(--text-muted);font-size:11px;padding:4px 0">No files yet</div>';
         return;
     }
     panel.innerHTML = entries.map(([path, tag]) =>
@@ -2925,7 +2983,7 @@ function connectSessionWS(filePath) {
                 updateCodeOverlay(lastEvt.type, lastEvt.content, evtPath);
             }
 
-            const log = document.getElementById('event-log');
+            const log = getAgentLog();
             const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
             state.autoScroll = atBottom;
 
@@ -2970,14 +3028,21 @@ async function showMasterChannel() {
     document.getElementById('session-view').style.display = 'flex';
 
     document.getElementById('back-btn').onclick = () => navigate('#/');
+
+    // Init chat mode from localStorage
+    try { state.chatSplit = localStorage.getItem('agenttv_chatSplit') === '1'; } catch {}
+    document.getElementById('chat-log').innerHTML = '';
     document.getElementById('event-log').innerHTML = '';
     const viewerLogMasterInit = document.getElementById('viewer-log');
-    if (viewerLogMasterInit) viewerLogMasterInit.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Loading all streams…</div>';
+    if (viewerLogMasterInit) viewerLogMasterInit.innerHTML = '';
+    applyChatMode();
+    getViewerLog().innerHTML = '<div style="padding:20px;color:var(--text-muted)">Loading all streams…</div>';
     const vcc2 = document.getElementById('viewer-chat-count'); if (vcc2) vcc2.textContent = '';
     const alc2 = document.getElementById('agent-log-count'); if (alc2) alc2.textContent = '';
 
     setupActions('__master__');
 
+    document.getElementById('split-chat-btn').onclick = toggleChatSplit;
     document.getElementById('filter-toggle-btn').onclick = () => {
         const panel = document.getElementById('filters-panel');
         panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
@@ -3020,7 +3085,7 @@ async function showMasterChannel() {
         syncLlmToggleUI();
         if (state.llmEnabled) startViewerChat();
     } catch (e) {
-        (document.getElementById('viewer-log') || document.getElementById('event-log')).innerHTML = '<div style="padding:20px;color:var(--text-muted)">Failed to load master channel</div>';
+        getViewerLog().innerHTML = '<div style="padding:20px;color:var(--text-muted)">Failed to load master channel</div>';
     }
 }
 
@@ -3034,16 +3099,18 @@ function renderMasterSession() {
     renderDonationGoal();
     renderMasterChatLog(s);
     renderMods(s);
-    renderViewers();
+    renderFiles();
     renderViewerCount();
 }
 
 function renderMasterChatLog(s) {
-    const log = document.getElementById('event-log');
-    const viewerLog = document.getElementById('viewer-log');
+    const log = getAgentLog();
     const wasAtBottom = state.autoScroll;
     log.innerHTML = '';
-    if (viewerLog) viewerLog.innerHTML = '';
+    if (state.chatSplit) {
+        const viewerLog = document.getElementById('viewer-log');
+        if (viewerLog) viewerLog.innerHTML = '';
+    }
     state.inventory = {};
 
     s.events.forEach((evt, idx) => {
@@ -3081,7 +3148,7 @@ function connectMasterWS() {
             updateCodeOverlay(lastEvt.type, lastEvt.content, evtPath);
             updateMasterMonitors(state.session.events);
 
-            const log = document.getElementById('event-log');
+            const log = getAgentLog();
             const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
             state.autoScroll = atBottom;
 
@@ -3143,7 +3210,7 @@ function drawRealCode(ctx, mx, my, mw, mh, content, frame) {
     ctx.font = '7px monospace';
     ctx.fillStyle = textColor;
 
-    const lines = content.text.split('\n');
+    const lines = (content.text || '').split('\n');
     const lineH = 8;
     const maxLines = Math.floor((mh - 6) / lineH);
     const charsPerLine = Math.floor((mw - 8) / 4.2);
@@ -3601,42 +3668,58 @@ function setupDividerDrag() {
 }
 
 function setupScrollListener() {
-    const log = document.getElementById('event-log');
+    const chatLog = document.getElementById('chat-log');
+    const eventLog = document.getElementById('event-log');
     const viewerLog = document.getElementById('viewer-log');
     const scrollBtn = document.getElementById('scroll-bottom-btn');
 
-    // Agent log scroll
-    if (log && !log.dataset.scrollBound) {
-        log.dataset.scrollBound = '1';
-        log.addEventListener('scroll', () => {
-            state.autoScroll = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
-            if (state.autoScroll) {
-                const badge = document.getElementById('new-events-badge');
-                if (badge) badge.style.display = 'none';
-                if (scrollBtn) scrollBtn.style.display = 'none';
-            } else {
-                if (scrollBtn) scrollBtn.style.display = 'block';
-            }
-        }, { passive: true });
+    function onScroll(el) {
+        const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
+        // In combined mode, chat-log controls both scroll states
+        if (!state.chatSplit && el === chatLog) {
+            state.autoScroll = atBottom;
+            state.viewerAutoScroll = atBottom;
+        } else if (state.chatSplit && el === eventLog) {
+            state.autoScroll = atBottom;
+        } else if (state.chatSplit && el === viewerLog) {
+            state.viewerAutoScroll = atBottom;
+            return; // Don't affect scroll button for viewer pane
+        } else {
+            return;
+        }
+        if (state.autoScroll) {
+            const badge = document.getElementById('new-events-badge');
+            if (badge) badge.style.display = 'none';
+            if (scrollBtn) scrollBtn.style.display = 'none';
+        } else {
+            if (scrollBtn) scrollBtn.style.display = 'block';
+        }
     }
 
-    // Viewer log scroll
+    // Bind scroll to all three elements (only active one fires meaningful events)
+    if (chatLog && !chatLog.dataset.scrollBound) {
+        chatLog.dataset.scrollBound = '1';
+        chatLog.addEventListener('scroll', () => onScroll(chatLog), { passive: true });
+    }
+    if (eventLog && !eventLog.dataset.scrollBound) {
+        eventLog.dataset.scrollBound = '1';
+        eventLog.addEventListener('scroll', () => onScroll(eventLog), { passive: true });
+    }
     if (viewerLog && !viewerLog.dataset.scrollBound) {
         viewerLog.dataset.scrollBound = '1';
-        viewerLog.addEventListener('scroll', () => {
-            state.viewerAutoScroll = viewerLog.scrollTop + viewerLog.clientHeight >= viewerLog.scrollHeight - 30;
-        }, { passive: true });
+        viewerLog.addEventListener('scroll', () => onScroll(viewerLog), { passive: true });
     }
 
     if (scrollBtn) {
         scrollBtn.onclick = () => {
-            log.scrollTop = log.scrollHeight;
+            const target = state.chatSplit ? eventLog : chatLog;
+            if (target) target.scrollTop = target.scrollHeight;
             state.autoScroll = true;
             scrollBtn.style.display = 'none';
         };
     }
 
-    setupDividerDrag();
+    if (state.chatSplit) setupDividerDrag();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

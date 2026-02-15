@@ -88,6 +88,13 @@
                             </div>
                         </div>
                     </div>
+                    <!-- Files panel (bottom-left) -->
+                    <div class="stream-files">
+                        <div class="stream-files-header">
+                            📁 FILES <span id="files-count" class="dim"></span>
+                        </div>
+                        <div id="files-panel" class="stream-files-body"></div>
+                    </div>
                 </div>
 
                 <!-- Chat sidebar -->
@@ -96,15 +103,20 @@
                         <span>STREAM CHAT</span>
                         <span id="event-count" class="dim"></span>
                         <span id="new-events-badge" class="new-badge" style="display:none"></span>
+                        <button id="split-chat-btn" class="split-chat-btn" title="Split chat">⫼</button>
                         <button id="expand-chat-btn" class="expand-chat-btn" title="Toggle fullscreen chat">⛶</button>
                     </div>
-                    <div class="chat-dual-pane">
-                        <div class="chat-pane viewer-pane">
+                    <div class="chat-mods-bar" id="agents-panel"></div>
+                    <div class="chat-container">
+                        <!-- Combined mode (default) -->
+                        <div class="chat-pane-body" id="chat-log"></div>
+                        <!-- Split mode (hidden by default) -->
+                        <div class="chat-pane viewer-pane" style="display:none">
                             <div class="chat-pane-header">VIEWER CHAT <span id="viewer-chat-count"></span></div>
                             <div class="chat-pane-body" id="viewer-log"></div>
                         </div>
-                        <div class="chat-pane-divider"></div>
-                        <div class="chat-pane agent-pane">
+                        <div class="chat-pane-divider" style="display:none"></div>
+                        <div class="chat-pane agent-pane" style="display:none">
                             <div class="chat-pane-header">AGENT LOG <span id="agent-log-count"></span></div>
                             <div class="chat-pane-body" id="event-log"></div>
                         </div>
@@ -122,21 +134,6 @@
                         <div class="chat-filters">
                             <button id="filter-toggle-btn" class="filter-toggle-btn">⚙ Filters</button>
                             <div id="filters-panel" class="filters-dropdown" style="display:none"></div>
-                        </div>
-                    </div>
-                    <!-- Mods & Viewers panels -->
-                    <div class="chat-panels">
-                        <div class="chat-panel-section">
-                            <div class="chat-panel-header" data-toggle="mods-panel">
-                                🗡 MODS <span id="mod-count" class="dim"></span>
-                            </div>
-                            <div id="agents-panel" class="chat-panel-body"></div>
-                        </div>
-                        <div class="chat-panel-section">
-                            <div class="chat-panel-header" data-toggle="viewers-panel">
-                                👁 VIEWERS <span id="viewer-list-count" class="dim"></span>
-                            </div>
-                            <div id="inventory-panel" class="chat-panel-body"></div>
                         </div>
                     </div>
                 </div>

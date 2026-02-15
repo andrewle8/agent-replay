@@ -469,14 +469,54 @@ body {
     flex-shrink: 0;
 }
 
-/* Dual-pane chat layout (viewer chat + agent log) */
-.chat-dual-pane {
+/* Chat container (combined + split modes) */
+.chat-container {
     flex: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
     position: relative;
 }
+
+/* Compact mods bar at top of sidebar */
+.chat-mods-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    max-height: 64px;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+.chat-mods-bar:empty { display: none; }
+.mod-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: var(--bg-surface2);
+    border-radius: 10px;
+    font-size: 11px;
+    white-space: nowrap;
+}
+.mod-pill .mod-badge { font-size: 10px; }
+.mod-pill .mod-name { font-weight: 600; }
+.mod-pill .mod-tokens { color: var(--gold); font-size: 10px; font-family: var(--font-mono); }
+
+/* Split/combine toggle button */
+.split-chat-btn {
+    background: var(--bg-surface2);
+    border: none;
+    color: var(--text-dim);
+    font-size: 14px;
+    padding: 2px 8px;
+    cursor: pointer;
+    border-radius: 3px;
+    margin-left: auto;
+}
+.split-chat-btn:hover { background: var(--bg-hover); color: var(--text); }
+.split-chat-btn.active { color: var(--purple-light); }
 .chat-pane {
     display: flex;
     flex-direction: column;
@@ -650,43 +690,30 @@ body {
 .filter-entry input { accent-color: var(--purple); }
 .filter-entry label { cursor: pointer; }
 
-/* Chat panels (mods & viewers) */
-.chat-panels {
+/* Files panel (bottom-left, below stream info) */
+.stream-files {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: 300px;
+    background: var(--bg-surface);
     border-top: 1px solid var(--border);
-    max-height: 200px;
-    overflow-y: auto;
-    flex-shrink: 0;
 }
-
-.chat-panel-section { border-bottom: 1px solid var(--border); }
-
-.chat-panel-header {
+.stream-files-header {
     font-size: 11px;
     font-weight: 700;
-    padding: 6px 14px;
+    padding: 8px 16px;
     color: var(--text-dim);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    flex-shrink: 0;
 }
-.chat-panel-header:hover { background: var(--bg-hover); }
-
-.chat-panel-body { padding: 0 14px 8px; }
-
-/* Mod (agent) entries */
-.mod-entry {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 3px 0;
-    font-size: 12px;
+.stream-files-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 16px 8px;
 }
-.mod-entry .mod-badge { font-size: 12px; }
-.mod-entry .mod-name { font-weight: 700; flex: 1; }
-.mod-entry .mod-tokens { color: var(--gold); font-size: 11px; font-family: var(--font-mono); }
 
 /* Viewer (inventory) entries */
 .viewer-entry {
@@ -780,7 +807,6 @@ body {
     padding: 2px 8px;
     cursor: pointer;
     border-radius: 3px;
-    margin-left: auto;
 }
 .expand-chat-btn:hover { background: var(--bg-hover); color: var(--text); }
 
@@ -812,8 +838,8 @@ body {
     max-height: 500px;
     font-size: 12px;
 }
-.chat-fullscreen .chat-panels {
-    max-height: 150px;
+.chat-fullscreen .chat-mods-bar {
+    max-height: 80px;
 }
 
 /* Master channel — project tag in chat */
