@@ -142,6 +142,18 @@ Aggregates all active sessions into a single view with a dynamic wall of monitor
 
 Audio cues for agent events using Web Audio API: keystrokes during file edits, error buzzer, completion chime, chat message pop, spawn whoosh. Mute/unmute via the speaker button in the top bar. Preference persists in localStorage.
 
+### Session Replay
+
+Replay completed sessions with full playback controls. Play/pause, seek to any point via the timeline scrubber, and adjust speed (0.5x to 8x). Events are fed back through the pixel art engine and chat log in order, so you see exactly what happened during a session. The live WebSocket is disconnected during replay to avoid mixing old and new events.
+
+### Clip Recording
+
+Record WebM clips of the pixel art canvas via `canvas.captureStream()`. Click the record button to start/stop. The recording captures the canvas at 15 fps and downloads a `.webm` file when stopped. Useful for sharing interesting moments or agent reactions.
+
+### OBS Browser Source Overlay
+
+A standalone overlay page at `/overlay.html` designed for OBS Studio and other streaming software. Add it as a Browser Source with a transparent background to composite the pixel art scene, code overlay, chat panel, and stream alerts over your stream. Includes a LIVE badge and session name. Connect to any session via query parameter.
+
 ### Keyboard Shortcuts
 
 Press `?` to show a shortcut overlay. Available shortcuts: `Esc` (back/close), `M` (mute/unmute), `F` (fullscreen chat), `Space` (pause auto-scroll), `T` (toggle theme), `E` (export chat), `S` (split chat).
@@ -218,6 +230,7 @@ web/
 | Endpoint | Description |
 |---|---|
 | `GET /api/sessions` | List all discovered sessions |
+| `GET /api/session-preview/{id}` | Lightweight preview for dashboard thumbnails |
 | `GET /api/session/{id}` | Full parsed session data |
 | `GET /api/master` | Merged events from all recent sessions |
 | `GET /api/settings` | Current LLM configuration |
