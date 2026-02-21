@@ -149,7 +149,6 @@ export function appendChatMessage(log, evt, s, isMaster, evtIndex) {
     log.appendChild(div);
     log.appendChild(expanded);
     capChatDom(log);
-    updateAgentCount();
 }
 
 export function buildChatText(evt) {

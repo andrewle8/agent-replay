@@ -2,7 +2,7 @@
 
 import { state } from './state.js';
 import { esc, formatTimeAgo } from './utils.js';
-import { startPixelAnimation } from './pixelEngine.js';
+import { startPixelAnimation, stopAllAnimations } from './pixelEngine.js';
 
 // ============================================================
 // DASHBOARD
@@ -92,6 +92,7 @@ function filterSessions(sessions, query) {
 }
 
 export function renderDashboard() {
+    stopAllAnimations();
     const grid = document.getElementById('session-grid');
     const empty = document.getElementById('no-sessions');
 
@@ -192,22 +193,16 @@ export function renderDashboard() {
         }
     });
 
-    // Fetch latest event content for each session thumbnail
+    // Fetch latest event content for each session thumbnail (lightweight preview)
     groups.forEach((g, idx) => {
         const filePath = g.latest.file_path;
-        fetch('/api/session/' + encodeURIComponent(filePath))
+        fetch('/api/session-preview/' + encodeURIComponent(filePath))
             .then(r => r.json())
             .then(data => {
-                if (data.error || !data.events || !data.events.length) return;
-                for (let i = data.events.length - 1; i >= 0; i--) {
-                    const evt = data.events[i];
-                    if (evt.content && evt.content.length > 10) {
-                        const canvas = grid.querySelector(`canvas[data-seed="${idx}"]`);
-                        if (canvas) {
-                            canvas._monitorContent = { _text: evt.content, _type: evt.type };
-                        }
-                        break;
-                    }
+                if (!data.content) return;
+                const canvas = grid.querySelector(`canvas[data-seed="${idx}"]`);
+                if (canvas) {
+                    canvas._monitorContent = { _text: data.content, _type: data.type };
                 }
             })
             .catch(() => {});

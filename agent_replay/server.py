@@ -12,6 +12,8 @@ import sys
 import webbrowser
 from pathlib import Path
 
+import time
+
 import httpx
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -113,7 +115,7 @@ def _redact_summary(s: dict) -> dict:
     return s
 
 
-def _resolve_session_path(session_id: str) -> Path | None:
+async def _resolve_session_path(session_id: str) -> Path | None:
     """Resolve a session_id to a validated file path.
 
     Returns the Path if it exists and is under DATA_DIR (when set),
@@ -125,7 +127,7 @@ def _resolve_session_path(session_id: str) -> Path | None:
 
     if not file_path.exists():
         # Try finding by session ID in known locations
-        summaries = scan_sessions(DATA_DIR)
+        summaries = await asyncio.to_thread(scan_sessions, DATA_DIR)
         for s in summaries:
             if s.id == session_id or s.file_path == session_id:
                 file_path = Path(s.file_path)
@@ -201,7 +203,7 @@ async def post_chat(request: Request):
     context = ""
     if session_id:
         try:
-            file_path = _resolve_session_path(session_id)
+            file_path = await _resolve_session_path(session_id)
             if file_path:
                 session = parse(file_path)
                 session_data = _redact_session(session.to_dict())
@@ -253,14 +255,31 @@ async def put_settings(request: Request):
 
 @app.get("/api/sessions")
 async def list_sessions():
-    summaries = scan_sessions(DATA_DIR)
+    summaries = await asyncio.to_thread(scan_sessions, DATA_DIR)
     return [_redact_summary(s.to_dict()) for s in summaries]
+
+
+@app.get("/api/session-preview/{session_id:path}")
+async def get_session_preview(session_id: str):
+    """Return only the most recent substantial event content for thumbnails."""
+    file_path = await _resolve_session_path(session_id)
+    if not file_path:
+        return {"content": "", "type": ""}
+    try:
+        session = await asyncio.to_thread(parse, file_path)
+        for evt in reversed(session.events):
+            d = _redact_event(evt.to_dict())
+            if d.get("content") and len(d["content"]) > 10:
+                return {"content": d["content"], "type": d.get("type", "")}
+    except Exception:
+        logger.exception("Failed to parse session preview %s", session_id)
+    return {"content": "", "type": ""}
 
 
 @app.get("/api/session/{session_id:path}")
 async def get_session(session_id: str):
     """Parse and return a full session by file path (base64 or direct)."""
-    file_path = _resolve_session_path(session_id)
+    file_path = await _resolve_session_path(session_id)
     if not file_path:
         return {"error": "Session not found"}
     session = parse(file_path)
@@ -320,15 +339,18 @@ def _build_context(session_data: dict, n: int = 5) -> str:
     return f"{random.choice(names)} is working on a project."
 
 
-def _is_session_active(session_id: str) -> bool:
+async def _is_session_active(session_id: str) -> bool:
     """Check if a session is currently active (recently modified)."""
     if session_id == "__master__":
         return True
-    summaries = scan_sessions(DATA_DIR)
-    for s in summaries:
-        if s.id == session_id or s.file_path == session_id:
-            return s.is_active
-    return False
+    file_path = await _resolve_session_path(session_id)
+    if not file_path:
+        return False
+    try:
+        mtime = file_path.stat().st_mtime
+        return (time.time() - mtime) < 60
+    except OSError:
+        return False
 
 
 @app.get("/api/viewer-chat/{session_id:path}")
@@ -337,7 +359,7 @@ async def viewer_chat(session_id: str):
     import random
 
     # Skip LLM for inactive sessions — return empty so client uses fallback
-    if not _is_session_active(session_id):
+    if not await _is_session_active(session_id):
         return {"name": "", "message": ""}
 
     # Phase 1: Check buffer under lock
@@ -358,7 +380,7 @@ async def viewer_chat(session_id: str):
             master_data = await get_master()
             context = _build_context(master_data, n=10)
         else:
-            file_path = _resolve_session_path(session_id)
+            file_path = await _resolve_session_path(session_id)
             if file_path:
                 session = parse(file_path)
                 context = _build_context(
@@ -423,7 +445,7 @@ async def viewer_react(request: Request):
 async def narrator_chat(session_id: str):
     """Return a generated narrator commentary message for the session."""
     # Skip LLM for inactive sessions
-    if not _is_session_active(session_id):
+    if not await _is_session_active(session_id):
         return {"message": ""}
 
     # Phase 1: Check buffer under lock
@@ -437,7 +459,7 @@ async def narrator_chat(session_id: str):
     # Phase 2: Generate new messages outside the lock (LLM call is slow)
     buf = []
     try:
-        file_path = _resolve_session_path(session_id)
+        file_path = await _resolve_session_path(session_id)
         if file_path:
             session = parse(file_path)
             context = _build_context(
@@ -465,7 +487,7 @@ async def ws_session(websocket: WebSocket, session_id: str):
     """Live updates for a single session — polls file every 2s, sends deltas."""
     await websocket.accept()
 
-    file_path = _resolve_session_path(session_id)
+    file_path = await _resolve_session_path(session_id)
     if not file_path:
         await websocket.send_json({"error": "Session not found"})
         await websocket.close()
@@ -505,7 +527,7 @@ async def ws_session(websocket: WebSocket, session_id: str):
 @app.get("/api/master")
 async def get_master():
     """Return merged events from all recent sessions for the master channel."""
-    summaries = scan_sessions(DATA_DIR)
+    summaries = await asyncio.to_thread(scan_sessions, DATA_DIR)
     # Take the most recent session per project (top 20)
     seen_projects: set[str] = set()
     selected: list[dict] = []
@@ -562,7 +584,7 @@ async def ws_master(websocket: WebSocket):
 
     try:
         while True:
-            summaries = scan_sessions(DATA_DIR)
+            summaries = await asyncio.to_thread(scan_sessions, DATA_DIR)
             active = [s for s in summaries if s.is_active]
             new_events = []
             all_agents = {}
@@ -619,7 +641,7 @@ async def ws_dashboard(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            summaries = scan_sessions(DATA_DIR)
+            summaries = await asyncio.to_thread(scan_sessions, DATA_DIR)
             await websocket.send_json({
                 "type": "sessions",
                 "data": [_redact_summary(s.to_dict()) for s in summaries],

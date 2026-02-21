@@ -257,6 +257,9 @@ function connectSessionWS(filePath) {
             renderSession();
         } else if (msg.type === 'delta' && state.session) {
             state.session.events.push(...msg.events);
+            if (state.session.events.length > 2000) {
+                state.session.events = state.session.events.slice(-2000);
+            }
             state.session.agents = msg.agents;
 
             if (msg.events.length > 0) {
